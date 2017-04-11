@@ -59,8 +59,9 @@ game_start_prompt = "       DIG-DUG       ",0xD,0xA
 				  = "  x,B    =    Enemies       ",0xD,0xA
 				  = "   #     =      Dirt        ",0xD,0xA
 				  = "   Z     = Unbreakable Wall ",0xD,0xA
-				  = "----------------------------",0xD,0xA,0
-				  = "Press Enter to start ",0xD,0xA
+				  = "----------------------------",0xD,0xA
+				  = 0xD,0xA
+				  = "Press Enter to start ",0xD,0xA,0
 
 player_location = 0x00000000	; Gameboard + 172 memory locations away to get to center (initialized each time the board is redrawn for new level
 game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses Enter
