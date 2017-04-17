@@ -31,7 +31,7 @@ timer_ones = "0",0xD,0xA
 
 gameboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
 			= "Z                   Z",0xD,0xA
-			= "Z                   Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
 			= "Z###################Z",0xD,0xA
 			= "Z###################Z",0xD,0xA
 			= "Z###################Z",0xD,0xA
@@ -47,7 +47,7 @@ gameboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
 			= "Z###################Z",0xD,0xA
 			= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA,0
 	ALIGN
-game_start_prompt = "       DIG-DUG       ",0xD,0xA
+game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = 0xD,0xA
 				  = "Use WASD to Move Player",0xD,0xA
 				  = "Press spacebar to launch air-hose to defeat enemies",0xD,0xA
@@ -66,6 +66,9 @@ game_start_prompt = "       DIG-DUG       ",0xD,0xA
 player_location = 0x00000000	; Gameboard + 172 memory locations away to get to center (initialized each time the board is redrawn for new level
 game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses Enter
 pause_flag = 0x00000000			; Pause flag, set to 1 when user presses external interrupt
+enemy_count = 0x00000003		; Number of enemies the spawn on the board, decrease after contact with air hose, reset to 3 on level up
+random_number = 0x00000000		; Random number generated when user presses enter to start the game
+game_timer_count = 120			; Total time (2 minutes) for the game to run
 	ALIGN
 player_character = ">"			; Initially ">"	corresponding to right
 player_direction = "d"			; Initially "d" corresponding to right
@@ -73,16 +76,16 @@ player_direction = "d"			; Initially "d" corresponding to right
 ;;;MAIN ROUTINE;;;
 lab7
 	STMFD sp!, {lr}
-	LDR r0, =pause_flag
-	MOV r1, #1
+	LDR r0, =game_start_flag
+	MOV r1, #1					; Reset the game start flag, in case of 'r' (restart)
 	STR r1, [r0]
   	BL pin_connect_block_setup
 	BL uart_init
-		; Timer control register to enable timer, manual reset of timer
-		LDR r0, =0xE0004004	;Load address of Timer 0 Control Register (T0TCR)
-		LDR r1, [r0]		;Load the contents of T0TCR
-		ORR r1, r1, #2		;Set 1 to reset TC at start of program
-		STR r1, [r0]		;Store the contents back to reset timer		
+	; Timer control register to manually reset timer
+	LDR r0, =0xE0004004	;Load address of Timer 0 Control Register (T0TCR)
+	LDR r1, [r0]		;Load the contents of T0TCR
+	ORR r1, r1, #2		;Set 1 to reset TC at start of program
+	STR r1, [r0]		;Store the contents back to reset timer		
 	BL interrupt_init
 	
 	;Initialization
@@ -182,7 +185,8 @@ TIMER0			; Check for Timer0 Interrupt
 		
 		; Timer0 Handling Code (i.e. update the gameboard)
 		; Update the gameboard anytime timer reaches the match register value
-		
+		; Be sure to check is 4 areas (up, down, left, right) around player to see if enemy has been encountered
+		; If so, load up end screen (display score, list options, i.e. press 'r' to restart or 'q' to quit)
 
 		LDMFD sp!, {r0-r12, lr}			; Restore registers
 		
@@ -203,6 +207,13 @@ EINT1			; Check for EINT1 interrupt
 		; Push button EINT1 Handling Code
 		
 		; Pause the game, set the pause flag to 1, preventing timer interrupts, change RGB LED to blue
+		; (grab code from lab 6, from hitting spacebar)
+		; Check if the pause flag is currently 0
+		; If not, branch past
+		; Set the pause flag to 1, preventing timer interrupts, preventing game clock from counting down
+		; Change RGB LED to blue, signalling that the game is paused
+		; If pause flag is currently 1, reset flag to 0, allowing timer interrupts, resume the game clock
+		; Change RGB LED to green, signalling that the game is running
 			
 		LDMFD SP!, {r0-r12, lr}   ; Restore registers		
 
@@ -218,17 +229,74 @@ UART0			  ; Check for UART0 interrupt
 		CMP r1, #1
 		BEQ FIQ_Exit
 		
+		LDR r3, =pause_flag	   ; If paused, skip over any UART interrupts
+		LDR r4, [r3]
+		CMP r4, #1
+		BEQ FIQ_Exit
+
 		STMFD SP!, {r0-r12, lr}   ; Save registers
 		
 		; UART0 Handling Code
-		BL read_char		;Read the user-entered input char
+		BL read_char		;Read the user-entered input char (wasd)
 		
 		; Check the current player character (find the direction they are facing)
-		; If the key pressed corresponds with the direction the player is facing, move the player one place in that direction
-		; If the next space is space/dirt, allow the player to move one space
-		; If the next space is unbreakable wall, change direction and character to match, but do not move the player
-		; Otherwise, change the player character to face that direction, and change the direction
-					
+		; Check if input character is 'w' (up)
+		; If not, branch to next check
+		; Compare current direction the player is facing to the input
+		; If different branch to change direction/character, do not move ('^' to player character, 'w' to player direction)
+		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
+		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
+		; If next space is 'Z' (unbreakable wall), do not move the player
+
+		; Check if input character is 'a' (left)
+		; If not, branch to next check
+		; Compare current direction the player is facing to the input
+		; If different branch to change direction/character, do not move ('<' to player character, 'a' to player direction)
+		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
+		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
+		; If next space is 'Z' (unbreakable wall), do not move the player
+
+		; Check if input character is 's' (down)
+		; If not, branch to next check
+		; Compare current direction the player is facing to the input
+		; If different branch to change direction/character, do not move ('v' to player character, 's' to player direction)
+		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
+		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
+		; If next space is 'Z' (unbreakable wall), do not move the player
+
+		; Check if input character is 'd' (left)
+		; If not, branch to next check
+		; Compare current direction the player is facing to the input
+		; If different branch to change direction/character, do not move ('>' to player character, 'd' to player direction)
+		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
+		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
+		; If next space is 'Z' (unbreakable wall), do not move the player
+
+		; Check if input character is enter key
+		; If not, branch to next check
+		; Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
+		; Start the second timer? Allow the timer to also use a second match register?
+		; Grab the current timer value and store that as random_number
+
+		; Check if input character is ' ' (launch air hose)
+		; If not, branch to next check
+		; Check the user's currect direction, begin launching '=' (air hose) in that direction
+		; Check the next space along the player's path
+		; If '#' (dirt) or 'Z' (wall), move temporary address backwards remove any drawn hose (until player character is found) and exit subroutine
+		; If ' ' (empty space), draw '=' and move temporary address (to keep track of location)
+		; If 'x' (small enemy) or 'B' (big enemy), remove the enemy (check if enemy address matches the current temporary address)
+		;															(If so, remove character from board, decrese the total number of enemies)
+		
+		; Check if input character is 'r' (restart)
+		; If not, branch to next check
+		; Reset to beginning of routine, back at main screen, reset game_start flag to 1 (preventing timer interrupts)
+		; Reset game_timer_count to 120
+		; Reset 
+
+		; Check if input character is 'q' (quit)
+		; If not, branch to next check
+		; Branch to QUIT, ending the game at any point
+			
 FIQ_Exit
 		LDMFD SP!, {r0-r12, lr}
 		SUBS pc, lr, #4
@@ -238,12 +306,20 @@ FIQ_Exit
 update_score
 	STMFD sp!, {r0-r12, lr}	; Store registers on stack
 	
-	;Increment score by 10 if player passes through dirt
-	;Increment score by 50 if player defeats small enemy
-	;Increment score by 100 if player defeats large enemy
-	;Increment score by 150 if player passes level
-	;5 places, as defined above	
-	;Have separate increments based on what occured (numbers 0-3)
+	; If particular register value is 0 when entering routine,
+	; Increment score by 10 if player passes through dirt
+	
+	; If particular register value is 1 when entering routine, 
+	; Increment score by 50 if player defeats small enemy
+
+	; If particular register value is 2 when entering routine,
+	; Increment score by 100 if player defeats large enemy
+
+	; If particular register value is 3 when entering routine,
+	; Increment score by 150 if player passes level
+
+	; If particular register value is otherwise, exit routine
+	; 5 places, as defined above
 	
 	LDR r0, =score_ones		;Load the address for the ones place into r0
 	LDRB r1, [r0]			;Load the ASCII value into r1
@@ -279,6 +355,19 @@ INCREMENTONES
 
 FINISHSCORE
 	LDMFD sp!, {r0-r12, lr} ; Load registers from stack
+	BX lr
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;ENEMY MOVEMENT LOGIC;;;
+move_enemy
+	STMFD sp!, {r0-r12, lr}
+
+	; Grab location and enemy type from memory
+	; Check if 4 areas (up, down, left, right) around enemy are spaces (similar to player)
+	; Take random number/or generate another one? 
+	; 
+
+	LDMFD sp!, {r0-r12, lr}
 	BX lr
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
