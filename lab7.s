@@ -18,7 +18,6 @@
 	ALIGN
 
 score_prompt = 0x0C, "SCORE: ",0	;Find location in memory of value, and adjust accordingly
-score_tenthousands = "0",0
 score_thousands = "0",0
 score_hundreds = "0",0
 score_tens = "0",0
@@ -61,7 +60,7 @@ game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = "   Z     = Unbreakable Wall ",0xD,0xA
 				  = "----------------------------",0xD,0xA
 				  = 0xD,0xA
-				  = "Press Enter to start ",0xD,0xA,0
+				  = "Press 'g' to start ",0xD,0xA,0
 
 player_location = 0x00000000	; Gameboard + 172 memory locations away to get to center (initialized each time the board is redrawn for new level
 game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses 'g'
@@ -72,38 +71,61 @@ enemy2_location = 0x00000000	; Enemy locations stored in memory, randomized duri
 enemyB_location = 0x00000000
 random_number = 0x00000000		; Random number generated when user presses enter to start the game
 game_timer_count = 120			; Total time (2 minutes) for the game to run, reset to 120 on initialization
-player_live_flag = 0x00000000	; Number of lives, initialize to 4 when the game starts
+player_lives = 0x00000000		; Number of lives, initialize to 4 when the game starts
 	ALIGN
 player_character = ">"			; Initially ">"	corresponding to right
 player_direction = "d"			; Initially "d" corresponding to right
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;MAIN ROUTINE;;;
 lab7
-	STMFD sp!, {lr}
-	LDR r0, =game_start_flag
-	MOV r1, #1					; Reset the game start flag, in case of 'r' (restart)
-	STR r1, [r0]
-  	BL pin_connect_block_setup
-	BL uart_init
-	; Timer control register to manually reset timer
-	LDR r0, =0xE0004004	;Load address of Timer 0 Control Register (T0TCR)
-	LDR r1, [r0]		;Load the contents of T0TCR
-	ORR r1, r1, #2		;Set 1 to reset TC at start of program
-	STR r1, [r0]		;Store the contents back to reset timer		
-	BL interrupt_init
+		STMFD sp!, {lr}
+RESET_GAME
+		LDR r0, =game_start_flag
+		MOV r1, #1					; Reset the game start flag, in case of 'r' (restart)
+		STR r1, [r0]
+	  	BL pin_connect_block_setup
+		BL uart_init
+		; Timer control register to manually reset timer
+		LDR r0, =0xE0004004	;Load address of Timer 0 Control Register (T0TCR)
+		LDR r1, [r0]		;Load the contents of T0TCR
+		ORR r1, r1, #2		;Set 1 to reset TC at start of program
+		STR r1, [r0]		;Store the contents back to reset timer		
+		BL interrupt_init
+		
+		;Initialization
+	;; Player Lives ;;
+		LDR r0, =player_lives
+		MOV r1, #4			;Initialize player lives to 4 at game start
+		STR r1, [r0]
+	;; Game Timer ;;
+		LDR r0, =game_timer_count
+		MOV r1, #120		;Initialize game timer to 120 (2 minutes of in-game time)
+		STR r1, [r0]
+	;; Enemy Count ;;
+		LDR r0, =enemy_count
+		MOV r1, #3			;Initialize total number of enemies to 3 at game start (and on level up)
+		STR r1, [r0]
+	;; Player Location ;;
+		LDR r0, =player_location
+		LDR r1, =gameboard	;Load the base address of the gameboard 
+		ADD r1, r1, #172	;Add 172 to find the address at the center of the board
+		STR r1, [r0]		;Store this central address at player_location at game start (and on level up)
 	
-	;Initialization
-	; Before game starts, RGB LED should be set to red
-	; When game starts, RGB LED should be set to green
-	; Each time the game levels up, decrease match register by 0.1 seconds (find that value)
+		MOV r0, #0x77		; Before game starts, RGB LED should be set to white
+		BL illuminate_RGB_LED
+
+		;;; Various initialization steps
+
+		; When game starts, RGB LED should be set to green
+		; Each time the game levels up, decrease match register by 0.1 seconds (find that value)
 
 INFINITE_LOOP
-	B INFINITE_LOOP
+		B INFINITE_LOOP
 
 QUIT
-	
-	LDMFD sp!, {lr}
-	BX lr
+		;Set RGB LED to red?
+		LDMFD sp!, {lr}
+		BX lr
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;INTERRUPT INITIALIZATION;;;
@@ -182,7 +204,12 @@ TIMER0			; Check for Timer0 Interrupt
 		CMP r1, #2
 		BNE EINT1
 
-		LDR r3, =pause_flag
+		LDR r3, =pause_flag		   ;If pause_flag is 1, do not update the board
+		LDR r4, [r3]
+		CMP r4, #1
+		BEQ EINT1
+		
+		LDR r3, =game_start_flag   ;If game_start_flag is 1, do not update the board
 		LDR r4, [r3]
 		CMP r4, #1
 		BEQ EINT1		
@@ -191,6 +218,7 @@ TIMER0			; Check for Timer0 Interrupt
 		
 		; Timer0 Handling Code (i.e. update the gameboard)
 		; Update the gameboard anytime timer reaches the match register value
+		; Move enemies
 		; Be sure to check is 4 areas (up, down, left, right) around player to see if enemy has been encountered
 		; If so, decrease number of lives by 1 (starting at 4)
 		; If number of lives becomes 0, load up end screen (display score, list options, i.e. press 'r' to restart or 'q' to quit)
@@ -211,9 +239,7 @@ EINT1			; Check for EINT1 interrupt
 
 		STMFD SP!, {r0-r12, lr}   ; Save registers 		
 
-		; Push button EINT1 Handling Code
-		
-		;;;PAUSE;;;			
+	; Push button EINT1 Handling Code		
 		LDR r0, =pause_flag	;Load address of pause flag
 		LDR r1, [r0]		;Load current value of pause flag
 		CMP r1, #1			;Check to see if pause has already been triggered
@@ -252,12 +278,12 @@ UART0			  ; Check for UART0 interrupt
 
 		STMFD SP!, {r0-r12, lr}   ; Save registers
 		
-		; UART0 Handling Code
+	; UART0 Handling Code
 		BL read_char		;Read the user-entered input char (wasd)
 
 ;;;;;;UPDATE TO MOVE UP;;;;;;
 UP_CHECK
-		CMP r0, #0x77			;Check if the input direction is up
+		CMP r0, #0x77			;Check if the input direction is 'w', up
 		BNE DOWN_CHECK			;If not, branch to next check
 	; Compare the player's current direction to the new input direction
 		LDR r1, =player_direction	;Load the player's previous direction
@@ -294,7 +320,7 @@ UP_CHANGE_DIRECT
 
 ;;;;;;UPDATE TO MOVE LEFT;;;;;;
 LEFT_CHECK
-		CMP r0, #0x61			;Check if the input direction is left
+		CMP r0, #0x61			;Check if the input direction is 'a', left
 		BNE DOWN_CHECK			;If not, branch to next check
 	; Compare the player's current direction to the new input direction
 		LDR r1, =player_direction	;Load the player's previous direction
@@ -331,7 +357,7 @@ LEFT_CHANGE_DIRECT
 
 ;;;;;;UPDATE TO MOVE DOWN;;;;;;
 DOWN_CHECK
-		CMP r0, #0x73			;Check if the input direction is down
+		CMP r0, #0x73			;Check if the input direction is 's', down
 		BNE RIGHT_CHECK			;If not, branch to next check
 	; Compare the player's current direction to the new input direction
 		LDR r1, =player_direction	;Load the player's previous direction
@@ -368,7 +394,7 @@ DOWN_CHANGE_DIRECT
 
 ;;;;;;UPDATE TO MOVE RIGHT;;;;;;
 RIGHT_CHECK
-		CMP r0, #0x64			;Check if the input direction is right
+		CMP r0, #0x64			;Check if the input direction is 'd', right
 		BNE GAME_START_CHECK	;If not, branch to next check
 	; Compare the player's current direction to the new input direction
 		LDR r1, =player_direction	;Load the player's previous direction
@@ -403,39 +429,41 @@ RIGHT_CHANGE_DIRECT
 		STRB r2, [r5]			;Store the new character representing the player
 		B FIQ_Exit
 
- GAME_START_CHECK
+GAME_START_CHECK
 		CMP r0, #0x67			;Check if input is 'g', allowing game to start from opening screen
-		BNE RESTART_CHECK
-		; Check if input character is 'g'
-		; If not, branch to next check
-		; Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
-		; Start the second timer? Allow the timer to also use a second match register?
-		; Grab the current timer value and store that as random_number
+		BNE RESTART_CHECK		;If not, branch to next check
+		LDR r0, =game_start_flag	;Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
+		MOV r1, #0				;Use temporary register, storing the new game_start_flag
+		STR r1, [r0]			;Store the new game_start_flag, allowing the game to start
+	; Start the second timer? Allow the timer to also use a second match register?
+		LDR r0, =0xE0004008 	;Load the address for timer0 into r0
+		LDR r1, =random_number	;Load the address for the random number 
+		LDR r2, [r0]			;Load the current random value from the timer
+		STR r2, [r1]			;Store that timer value to the random number (ensuring it's random based on the user)
+		MOV r0, #0x67			;Send ASCII 'g' representing green to r0
+		BL illuminate_RGB_LED	;Set RGB LED to green, indicating game is running
+		B FIQ_Exit
 
 RESTART_CHECK
-		CMP r0, #0x72		
-		; Check if input character is 'r' (restart)
-		; If not, branch to next check
-		; Reset to beginning of routine, back at main screen, reset game_start flag to 1 (preventing timer interrupts)
-		; Reset game_timer_count to 120
-		; Reset 
+		CMP r0, #0x72			;Check if input character is 'r' (restart)
+		BEQ RESET_GAME			;Branch to initialization to reset the game (resetting all set values) 
 
-		; Check if input character is ' ' (launch air hose)
-		; If not, branch to next check
+AIR_HOSE_CHECK
+		CMP r0, #0x20			; Check if input character is ' ' (launch air hose)
+		BNE CHECK_QUIT			; If not, branch to next check
+		
 		; Check the user's currect direction, begin launching '=' (air hose) in that direction
 		; Check the next space along the player's path
 		; If '#' (dirt) or 'Z' (wall), move temporary address backwards remove any drawn hose (until player character is found) and exit subroutine
 		; If ' ' (empty space), draw '=' and move temporary address (to keep track of location)
 		; If 'x' (small enemy) or 'B' (big enemy), remove the enemy (check if enemy address matches the current temporary address)
 		;															(If so, remove character from board, decrese the total number of enemies)
+		;															(Remove the air hose by working backwards until the player character is found
+		B FIQ_Exit
 
-		; Check if input character is 'q' (quit)
-		; If not, branch to next check
-		; Branch to QUIT, ending the game at any point
 CHECK_QUIT
-		CMP r0, #0x71
-		BNE FIQ_Exit
-		B QUIT
+		CMP r0, #0x71	 	; Check if input character is 'q' (quit) 
+		BEQ QUIT			; Branch to QUIT, ending the game at any point
 			
 FIQ_Exit
 		LDMFD SP!, {r0-r12, lr}
@@ -444,82 +472,101 @@ FIQ_Exit
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;UPDATING SCORE;;;
 update_score
-	STMFD sp!, {r0-r12, lr}	; Store registers on stack
-	;;; USE R0 AS THE PARTICULAR REGISTER ;;;
-	; If particular register value is 0 when entering routine,
+		STMFD sp!, {r0-r12, lr}	; Store registers on stack
+	
+	;;; UPDATE SCORE FOR DIRT ;;;
+		CMP r0, #0				 ; If particular register value is 0 when entering routine,
+		BNE SCORE_Small			 
 	; Increment score by 10 if player passes through dirt
-	CMP r0, #0				;Compare the flag register to 0, 
-	 
-	; If particular register value is 1 when entering routine, 
+		LDR r0, =score_tens		;Load the address for the tens place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x39			;Compare this value to 9
+		BNE TENS_INCREMENT
+		MOV r1, #0x30			;Reset the tens place of the score to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_tens
+		B HUNDREDS_INCREMENT
+TENS_INCREMENT
+		ADD r1, r1, #1			;Increment the ASCII value by 1
+		STRB r1, [r0]			;Store the value back into score_tens
+		B FINISHSCORE
+
+;;; UPDATE SCORE FOR SMALL ENEMY ;;;
+SCORE_Small
+		CMP r0, #1				 ; If particular register value is 1 when entering routine,
+		BNE SCORE_Large 
 	; Increment score by 50 if player defeats small enemy
 
-	; If particular register value is 2 when entering routine,
+;;; UPDATE SCORE FOR LARGE ENEMY ;;;
+SCORE_Large
+		CMP r0, #2				 ; If particular register value is 2 when entering routine,
+		BNE SCORE_Level
 	; Increment score by 100 if player defeats large enemy
+		LDR r0, =score_hundreds	;Load the address for the hundreds place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x39			;Compare this value to 9
+		BNE HUNDREDS_INCREMENT
+		MOV r1, #0x30			;Reset the hundreds place of the score back to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
+		B SCORE_Thousands
+HUNDREDS_INCREMENT
+		ADD r1, r1, #1			;Increment the ASCII value by 1
+		STRB r1, [r0]			;Store the value back into score_hundreds
+		B FINISHSCORE
 
-	; If particular register value is 3 when entering routine,
+;;; UPDATE SCORE FOR LEVEL UP ;;;
+SCORE_Level
+		CMP r0, #3				 ; If particular register value is 3 when entering routine,
+		BNE FINISHSCORE			 ; If particular register value is otherwise, exit routine
 	; Increment score by 150 if player passes level
+	   	
 
-	; If particular register value is otherwise, exit routine
-	; 5 places, as defined above
-	
-	MOV r1, #0x30			;Reset the ones place of the score to 0
-	STRB r1, [r0]			;Store ASCII '0' back to score_ones
-	LDR r0, =score_tens		;Load the address for the tens place into r0
-	LDRB r1, [r0]			;Load the ASCII value into r1
-	CMP r1, #0x39			;Compare this value to 9
-	BNE INCREMENTTENS
-	MOV r1, #0x30			;Reset the tens place of the score to 0
-	STRB r1, [r0]			;Store ASCII '0' back to score_tens
-	LDR r0, =score_hundreds	;Load the address for the hundreds place into r0
-	LDRB r1, [r0]			;Load the ASCII value into r1
-	CMP r1, #0x39			;Compare this value to 9
-	BNE INCREMENTHUNDREDS
-	MOV r1, #0x30			;Reset the hundreds place of the score back to 0
-	STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
-	B FINISHSCORE			;Resultant score output should be '000'
-	
-INCREMENTHUNDREDS
-	ADD r1, r1, #1			;Increment the ASCII value by 1
-	STRB r1, [r0]			;Store the value back into score_hundreds
-	B FINISHSCORE
-INCREMENTTENS
-	ADD r1, r1, #1			;Increment the ASCII value by 1
-	STRB r1, [r0]			;Store the value back into score_tens
-	B FINISHSCORE
+SCORE_Thousands
+	; Check thousands place for incrementation if necessary
+	    LDR r0, =score_thousands	;Load the address for the thousands place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x39			;Compare this value to 9
+		BNE TENS_INCREMENT
+		MOV r1, #0x30			;Reset the thousands place of the score to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_tens
+		B FINISHSCORE
+THOUSANDS_INCREMENT
+		ADD r1, r1, #1			;Increment the ASCII value by 1
+		STRB r1, [r0]			;Store the value back into score_tens
 
 FINISHSCORE
+		
 	LDMFD sp!, {r0-r12, lr} ; Load registers from stack
 	BX lr
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;ENEMY MOVEMENT LOGIC;;;
 move_enemy
-	STMFD sp!, {r0-r12, lr}
-
-	; Grab location and enemy type from memory
-	; Check if 4 areas (up, down, left, right) around enemy are spaces (similar to player)
-	; Take random number/or generate another one? 
-	; 
-
-	LDMFD sp!, {r0-r12, lr}
-	BX lr
+		STMFD sp!, {r0-r12, lr}
+	
+		; Grab location and enemy type from that location from memory
+		; Check if 4 areas (up, down, left, right) around enemy are spaces (similar to player)
+		; Take random number/or generate another one? 
+		; 
+	
+		LDMFD sp!, {r0-r12, lr}
+		BX lr
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;PIN SETUP;;;
 pin_connect_block_setup
-	STMFD sp!, {r0, r1, lr}
-	LDR r0, =0xE002C000  ; PINSEL0
-	MOV r1, #0x26
-	BIC r1, r1, #0xD9
-	LSL r1, #8
-	ADD r1, r1, #0x3F
-	BIC r1, r1, #0xC0
-	LSL r1, #8
-	ADD r1, r1, #0x85
-	BIC r1, r1, #0x7A
-	STR r1, [r0]
-	
-	LDMFD sp!, {r0, r1, lr}
-	BX lr
+		STMFD sp!, {r0, r1, lr}
+		LDR r0, =0xE002C000  ; PINSEL0
+		MOV r1, #0x26
+		BIC r1, r1, #0xD9
+		LSL r1, #8
+		ADD r1, r1, #0x3F
+		BIC r1, r1, #0xC0
+		LSL r1, #8
+		ADD r1, r1, #0x85
+		BIC r1, r1, #0x7A
+		STR r1, [r0]
+		
+		LDMFD sp!, {r0, r1, lr}
+		BX lr
 
 	END
