@@ -186,7 +186,8 @@ TIMER0			; Check for Timer0 Interrupt
 		; Timer0 Handling Code (i.e. update the gameboard)
 		; Update the gameboard anytime timer reaches the match register value
 		; Be sure to check is 4 areas (up, down, left, right) around player to see if enemy has been encountered
-		; If so, load up end screen (display score, list options, i.e. press 'r' to restart or 'q' to quit)
+		; If so, decrease number of lives by 1 (starting at 4)
+		; If number of lives becomes 0, load up end screen (display score, list options, i.e. press 'r' to restart or 'q' to quit)
 
 		LDMFD sp!, {r0-r12, lr}			; Restore registers
 		
@@ -239,15 +240,48 @@ UART0			  ; Check for UART0 interrupt
 		; UART0 Handling Code
 		BL read_char		;Read the user-entered input char (wasd)
 		
-		; Check the current player character (find the direction they are facing)
-		; Check if input character is 'w' (up)
 		; If not, branch to next check
 		; Compare current direction the player is facing to the input
 		; If different branch to change direction/character, do not move ('^' to player character, 'w' to player direction)
 		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
 		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
 		; If next space is 'Z' (unbreakable wall), do not move the player
-
+;;;;;;UPDATE TO MOVE UP;;;;;;
+UP_CHECK
+		CMP r0, #0x77			;Check if the input direction is up
+		BNE DOWN_CHECK			;If not, branch to next check
+	; Compare the player's current direction to the new input direction
+		LDR r1, =player_direction	;Load the player's previous direction
+		LDRB r2, [r1]
+		CMP r0, r2				;Compare the directions, if they match, move the player in that direction, if not, change direction, change character, and exit interrupt
+		BNE UP_CHANGE_DIRECT
+	; If directions match, check the next available character to see if it is 'Z', '#', or ' ' and act accordingly
+		MOV r2, #0x5A			;Load the value for 'Z' (wall)
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
+		SUB r4, r4, #23			;Find the address of memory -19 positions away (1 y-coordinate up)
+		LDRB r5, [r4]			;Load the contents from that address
+		CMP r2, r5				;Compare the next character the player would be moving to with 'Z'
+		BEQ UP_CHANGE_DIRECT	;If wall is next character, change direction and character, but do not move
+	; Compare and update score if player passes through dirt	
+		MOV r0, #0				;Use r0 as a signal for update_score to increment tens place by 1
+		MOV r2, #0x23			;Load value for '#' (dirt)
+		CMP r2, r5				;Compare the next character the player would be moving to with '#'
+		BLEQ update_score		;If character matches, update the score (increment value by 10)
+	; Move the player character up, regardless of if the score was incremented
+		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
+		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		LDR r5, =player_character	;Load the address for the player's current character
+		LDRB r6, [r5]			;Load the contents, the character representing the player
+		STRB r6, [r4]			;Store the player character at the new memory location (moving the player up)
+		STR r4, [r3]			;Update the player's location for further use
+		B END_MOVEMENT
+UP_CHANGE_DIRECT
+		STRB r0, [r1]			;Store the new direction into player's direction
+		MOV r2, #0x5E			;Temporarily store the character '^', representing up movement
+		LDR r5, player_character	;Load the address for the player's current character
+		STRB r2, [r5]			;Store the new character representing the player
+		B END_MOVEMENT
 		; Check if input character is 'a' (left)
 		; If not, branch to next check
 		; Compare current direction the player is facing to the input
@@ -305,7 +339,7 @@ FIQ_Exit
 ;;;UPDATING SCORE;;;
 update_score
 	STMFD sp!, {r0-r12, lr}	; Store registers on stack
-	
+	;;; USE R0 AS THE PARTICULAR REGISTER ;;;
 	; If particular register value is 0 when entering routine,
 	; Increment score by 10 if player passes through dirt
 	
