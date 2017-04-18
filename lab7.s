@@ -64,11 +64,15 @@ game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = "Press Enter to start ",0xD,0xA,0
 
 player_location = 0x00000000	; Gameboard + 172 memory locations away to get to center (initialized each time the board is redrawn for new level
-game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses Enter
+game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses 'g'
 pause_flag = 0x00000000			; Pause flag, set to 1 when user presses external interrupt
-enemy_count = 0x00000003		; Number of enemies the spawn on the board, decrease after contact with air hose, reset to 3 on level up
+enemy_count = 0x00000003		; Number of enemies the spawn on the board, decrease after contact with air hose, reset to 3 on level up/initialization
+enemy1_location = 0x00000000
+enemy2_location = 0x00000000	; Enemy locations stored in memory, randomized during initialization of gameboard
+enemyB_location = 0x00000000
 random_number = 0x00000000		; Random number generated when user presses enter to start the game
-game_timer_count = 120			; Total time (2 minutes) for the game to run
+game_timer_count = 120			; Total time (2 minutes) for the game to run, reset to 120 on initialization
+player_live_flag = 0x00000000	; Number of lives, initialize to 4 when the game starts
 	ALIGN
 player_character = ">"			; Initially ">"	corresponding to right
 player_direction = "d"			; Initially "d" corresponding to right
@@ -93,8 +97,10 @@ lab7
 	; When game starts, RGB LED should be set to green
 	; Each time the game levels up, decrease match register by 0.1 seconds (find that value)
 
-RESET
-	B RESET
+INFINITE_LOOP
+	B INFINITE_LOOP
+
+QUIT
 	
 	LDMFD sp!, {lr}
 	BX lr
@@ -207,15 +213,24 @@ EINT1			; Check for EINT1 interrupt
 
 		; Push button EINT1 Handling Code
 		
-		; Pause the game, set the pause flag to 1, preventing timer interrupts, change RGB LED to blue
-		; (grab code from lab 6, from hitting spacebar)
-		; Check if the pause flag is currently 0
-		; If not, branch past
-		; Set the pause flag to 1, preventing timer interrupts, preventing game clock from counting down
-		; Change RGB LED to blue, signalling that the game is paused
-		; If pause flag is currently 1, reset flag to 0, allowing timer interrupts, resume the game clock
-		; Change RGB LED to green, signalling that the game is running
-			
+		;;;PAUSE;;;			
+		LDR r0, =pause_flag	;Load address of pause flag
+		LDR r1, [r0]		;Load current value of pause flag
+		CMP r1, #1			;Check to see if pause has already been triggered
+		BEQ	UNPAUSE			;Branch to unpause game
+		MOV r1, #1			;Temp register to hold new pause flag value
+		STR r1, [r0]		;Trigger the pause flag value (change to 1) and exit interrupt
+		MOV r0, #0x62		;Load value for 'b' for RGB LED
+		BL illuminate_RGB_LED	;Change the RGB LED to blue, indicating pause
+		B ENT_Exit			
+
+UNPAUSE						;r0 still contains address of pause flag
+		MOV r1, #0			;Temp register to hold new pause flag value
+		STR r1, [r0]		;Reset the pause value value (change to 0)
+		MOV r0, #0x67		;Load vlaue to 'g' for RGB LED
+		BL illuminate_RGB_LED	;Change the RGB LED to green, indicating play is resumed	
+		
+ENT_Exit			
 		LDMFD SP!, {r0-r12, lr}   ; Restore registers		
 
 		ORR r1, r1, #2		; Clear Interrupt
@@ -239,13 +254,7 @@ UART0			  ; Check for UART0 interrupt
 		
 		; UART0 Handling Code
 		BL read_char		;Read the user-entered input char (wasd)
-		
-		; If not, branch to next check
-		; Compare current direction the player is facing to the input
-		; If different branch to change direction/character, do not move ('^' to player character, 'w' to player direction)
-		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
-		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
-		; If next space is 'Z' (unbreakable wall), do not move the player
+
 ;;;;;;UPDATE TO MOVE UP;;;;;;
 UP_CHECK
 		CMP r0, #0x77			;Check if the input direction is up
@@ -259,7 +268,7 @@ UP_CHECK
 		MOV r2, #0x5A			;Load the value for 'Z' (wall)
 		LDR r3, =player_location	;Find the player's current location
 		LDR r4, [r3]
-		SUB r4, r4, #23			;Find the address of memory -19 positions away (1 y-coordinate up)
+		SUB r4, r4, #23			;Find the address of memory -23 positions away (1 y-coordinate up)
 		LDRB r5, [r4]			;Load the contents from that address
 		CMP r2, r5				;Compare the next character the player would be moving to with 'Z'
 		BEQ UP_CHANGE_DIRECT	;If wall is next character, change direction and character, but do not move
@@ -275,42 +284,141 @@ UP_CHECK
 		LDRB r6, [r5]			;Load the contents, the character representing the player
 		STRB r6, [r4]			;Store the player character at the new memory location (moving the player up)
 		STR r4, [r3]			;Update the player's location for further use
-		B END_MOVEMENT
+		B FIQ_Exit
 UP_CHANGE_DIRECT
 		STRB r0, [r1]			;Store the new direction into player's direction
 		MOV r2, #0x5E			;Temporarily store the character '^', representing up movement
 		LDR r5, player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
-		B END_MOVEMENT
-		; Check if input character is 'a' (left)
-		; If not, branch to next check
-		; Compare current direction the player is facing to the input
-		; If different branch to change direction/character, do not move ('<' to player character, 'a' to player direction)
-		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
-		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
-		; If next space is 'Z' (unbreakable wall), do not move the player
+		B FIQ_Exit
 
-		; Check if input character is 's' (down)
-		; If not, branch to next check
-		; Compare current direction the player is facing to the input
-		; If different branch to change direction/character, do not move ('v' to player character, 's' to player direction)
-		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
-		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
-		; If next space is 'Z' (unbreakable wall), do not move the player
+;;;;;;UPDATE TO MOVE LEFT;;;;;;
+LEFT_CHECK
+		CMP r0, #0x61			;Check if the input direction is left
+		BNE DOWN_CHECK			;If not, branch to next check
+	; Compare the player's current direction to the new input direction
+		LDR r1, =player_direction	;Load the player's previous direction
+		LDRB r2, [r1]
+		CMP r0, r2				;Compare the directions, if they match, move the player in that direction, if not, change direction, change character, and exit interrupt
+		BNE LEFT_CHANGE_DIRECT
+	; If directions match, check the next available character to see if it is 'Z', '#', or ' ' and act accordingly
+		MOV r2, #0x5A			;Load the value for 'Z' (wall)
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
+		SUB r4, r4, #1			;Find the address of memory -1 positions away (1 x-coordinate left)
+		LDRB r5, [r4]			;Load the contents from that address
+		CMP r2, r5				;Compare the next character the player would be moving to with 'Z'
+		BEQ LEFT_CHANGE_DIRECT	;If wall is next character, change direction and character, but do not move
+	; Compare and update score if player passes through dirt	
+		MOV r0, #0				;Use r0 as a signal for update_score to increment tens place by 1
+		MOV r2, #0x23			;Load value for '#' (dirt)
+		CMP r2, r5				;Compare the next character the player would be moving to with '#'
+		BLEQ update_score		;If character matches, update the score (increment value by 10)
+	; Move the player character up, regardless of if the score was incremented
+		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
+		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		LDR r5, =player_character	;Load the address for the player's current character
+		LDRB r6, [r5]			;Load the contents, the character representing the player
+		STRB r6, [r4]			;Store the player character at the new memory location (moving the player left)
+		STR r4, [r3]			;Update the player's location for further use
+		B FIQ_Exit
+LEFT_CHANGE_DIRECT
+		STRB r0, [r1]			;Store the new direction into player's direction
+		MOV r2, #0x5E			;Temporarily store the character '<', representing left movement
+		LDR r5, player_character	;Load the address for the player's current character
+		STRB r2, [r5]			;Store the new character representing the player
+		B FIQ_Exit
 
-		; Check if input character is 'd' (left)
-		; If not, branch to next check
-		; Compare current direction the player is facing to the input
-		; If different branch to change direction/character, do not move ('>' to player character, 'd' to player direction)
-		; If directions match, check if the next character is ' ' (empty space) or '#' (dirt)
-		; Move the player in that direction (if the character is dirt, set register flag for update_score and branch)
-		; If next space is 'Z' (unbreakable wall), do not move the player
+;;;;;;UPDATE TO MOVE DOWN;;;;;;
+DOWN_CHECK
+		CMP r0, #0x73			;Check if the input direction is down
+		BNE RIGHT_CHECK			;If not, branch to next check
+	; Compare the player's current direction to the new input direction
+		LDR r1, =player_direction	;Load the player's previous direction
+		LDRB r2, [r1]
+		CMP r0, r2				;Compare the directions, if they match, move the player in that direction, if not, change direction, change character, and exit interrupt
+		BNE DOWN_CHANGE_DIRECT
+	; If directions match, check the next available character to see if it is 'Z', '#', or ' ' and act accordingly
+		MOV r2, #0x5A			;Load the value for 'Z' (wall)
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
+		ADD r4, r4, #23			;Find the address of memory 23 positions away (1 y-coordinate down)
+		LDRB r5, [r4]			;Load the contents from that address
+		CMP r2, r5				;Compare the next character the player would be moving to with 'Z'
+		BEQ DOWN_CHANGE_DIRECT	;If wall is next character, change direction and character, but do not move
+	; Compare and update score if player passes through dirt	
+		MOV r0, #0				;Use r0 as a signal for update_score to increment tens place by 1
+		MOV r2, #0x23			;Load value for '#' (dirt)
+		CMP r2, r5				;Compare the next character the player would be moving to with '#'
+		BLEQ update_score		;If character matches, update the score (increment value by 10)
+	; Move the player character up, regardless of if the score was incremented
+		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
+		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		LDR r5, =player_character	;Load the address for the player's current character
+		LDRB r6, [r5]			;Load the contents, the character representing the player
+		STRB r6, [r4]			;Store the player character at the new memory location (moving the player down)
+		STR r4, [r3]			;Update the player's location for further use
+		B FIQ_Exit
+DOWN_CHANGE_DIRECT
+		STRB r0, [r1]			;Store the new direction into player's direction
+		MOV r2, #0x76			;Temporarily store the character 'v', representing down movement
+		LDR r5, player_character	;Load the address for the player's current character
+		STRB r2, [r5]			;Store the new character representing the player
+		B FIQ_Exit
 
-		; Check if input character is enter key
+;;;;;;UPDATE TO MOVE RIGHT;;;;;;
+RIGHT_CHECK
+		CMP r0, #0x64			;Check if the input direction is right
+		BNE GAME_START_CHECK	;If not, branch to next check
+	; Compare the player's current direction to the new input direction
+		LDR r1, =player_direction	;Load the player's previous direction
+		LDRB r2, [r1]
+		CMP r0, r2				;Compare the directions, if they match, move the player in that direction, if not, change direction, change character, and exit interrupt
+		BNE RIGHT_CHANGE_DIRECT
+	; If directions match, check the next available character to see if it is 'Z', '#', or ' ' and act accordingly
+		MOV r2, #0x5A			;Load the value for 'Z' (wall)
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
+		ADD r4, r4, #1			;Find the address of memory 1 positions away (1 x-coordinate right)
+		LDRB r5, [r4]			;Load the contents from that address
+		CMP r2, r5				;Compare the next character the player would be moving to with 'Z'
+		BEQ RIGHT_CHANGE_DIRECT	;If wall is next character, change direction and character, but do not move
+	; Compare and update score if player passes through dirt	
+		MOV r0, #0				;Use r0 as a signal for update_score to increment tens place by 1
+		MOV r2, #0x23			;Load value for '#' (dirt)
+		CMP r2, r5				;Compare the next character the player would be moving to with '#'
+		BLEQ update_score		;If character matches, update the score (increment value by 10)
+	; Move the player character up, regardless of if the score was incremented
+		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
+		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		LDR r5, =player_character	;Load the address for the player's current character
+		LDRB r6, [r5]			;Load the contents, the character representing the player
+		STRB r6, [r4]			;Store the player character at the new memory location (moving the player right)
+		STR r4, [r3]			;Update the player's location for further use
+		B FIQ_Exit
+RIGHT_CHANGE_DIRECT
+		STRB r0, [r1]			;Store the new direction into player's direction
+		MOV r2, #0x5E			;Temporarily store the character '>', representing right movement
+		LDR r5, player_character	;Load the address for the player's current character
+		STRB r2, [r5]			;Store the new character representing the player
+		B FIQ_Exit
+
+ GAME_START_CHECK
+		CMP r0, #0x67			;Check if input is 'g', allowing game to start from opening screen
+		BNE RESTART_CHECK
+		; Check if input character is 'g'
 		; If not, branch to next check
 		; Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
 		; Start the second timer? Allow the timer to also use a second match register?
 		; Grab the current timer value and store that as random_number
+
+RESTART_CHECK
+		CMP r0, #0x72		
+		; Check if input character is 'r' (restart)
+		; If not, branch to next check
+		; Reset to beginning of routine, back at main screen, reset game_start flag to 1 (preventing timer interrupts)
+		; Reset game_timer_count to 120
+		; Reset 
 
 		; Check if input character is ' ' (launch air hose)
 		; If not, branch to next check
@@ -320,16 +428,14 @@ UP_CHANGE_DIRECT
 		; If ' ' (empty space), draw '=' and move temporary address (to keep track of location)
 		; If 'x' (small enemy) or 'B' (big enemy), remove the enemy (check if enemy address matches the current temporary address)
 		;															(If so, remove character from board, decrese the total number of enemies)
-		
-		; Check if input character is 'r' (restart)
-		; If not, branch to next check
-		; Reset to beginning of routine, back at main screen, reset game_start flag to 1 (preventing timer interrupts)
-		; Reset game_timer_count to 120
-		; Reset 
 
 		; Check if input character is 'q' (quit)
 		; If not, branch to next check
 		; Branch to QUIT, ending the game at any point
+CHECK_QUIT
+		CMP r0, #0x71
+		BNE FIQ_Exit
+		B QUIT
 			
 FIQ_Exit
 		LDMFD SP!, {r0-r12, lr}
@@ -342,7 +448,8 @@ update_score
 	;;; USE R0 AS THE PARTICULAR REGISTER ;;;
 	; If particular register value is 0 when entering routine,
 	; Increment score by 10 if player passes through dirt
-	
+	CMP r0, #0				;Compare the flag register to 0, 
+	 
 	; If particular register value is 1 when entering routine, 
 	; Increment score by 50 if player defeats small enemy
 
@@ -355,10 +462,6 @@ update_score
 	; If particular register value is otherwise, exit routine
 	; 5 places, as defined above
 	
-	LDR r0, =score_ones		;Load the address for the ones place into r0
-	LDRB r1, [r0]			;Load the ASCII value into r1
-	CMP r1, #0x39			;Compare this value to 9
-	BNE INCREMENTONES
 	MOV r1, #0x30			;Reset the ones place of the score to 0
 	STRB r1, [r0]			;Store ASCII '0' back to score_ones
 	LDR r0, =score_tens		;Load the address for the tens place into r0
@@ -383,9 +486,6 @@ INCREMENTTENS
 	ADD r1, r1, #1			;Increment the ASCII value by 1
 	STRB r1, [r0]			;Store the value back into score_tens
 	B FINISHSCORE
-INCREMENTONES
-	ADD r1, r1, #1			;Increment the ASCII value by 1
-	STRB r1, [r0]			;Store the value back into score_ones
 
 FINISHSCORE
 	LDMFD sp!, {r0-r12, lr} ; Load registers from stack
