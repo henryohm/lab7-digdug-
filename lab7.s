@@ -26,7 +26,7 @@ score_ones = "0",0
 game_timer = "    TIME: ",0
 timer_hundreds = "1",0
 timer_tens = "2",0
-timer_ones = "0",0xD,0xA
+timer_ones = "0",0xD,0xA,0
 
 gameboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
 			= "Z                   Z",0xD,0xA
@@ -48,7 +48,7 @@ gameboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
 	ALIGN
 game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = 0xD,0xA
-				  = "Use WASD to Move Player",0xD,0xA
+				  = "Use WASD to Move Player and dig through the dirt",0xD,0xA
 				  = "Press spacebar to launch air-hose to defeat enemies",0xD,0xA
 				  = "Defeat all enemies on the board to advance",0xD,0xA
 				  = 0xD,0xA
@@ -61,6 +61,9 @@ game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = "----------------------------",0xD,0xA
 				  = 0xD,0xA
 				  = "Press 'g' to start ",0xD,0xA,0
+	ALIGN
+game_end_prompt = " THANKS FOR PLAYING ",0xD,0xA
+				= " Press 'r' to restart the game, or 'q' to quit "0xD,0xA,0
 
 player_location = 0x00000000	; Gameboard + 172 memory locations away to get to center (initialized each time the board is redrawn for new level
 game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses 'g'
@@ -77,7 +80,7 @@ player_character = ">"			; Initially ">"	corresponding to right
 player_direction = "d"			; Initially "d" corresponding to right
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;MAIN ROUTINE;;;
-lab7
+lab7							; Use 115200 for baud rate in Putty
 		STMFD sp!, {lr}
 RESET_GAME
 		LDR r0, =game_start_flag
@@ -114,11 +117,19 @@ RESET_GAME
 		MOV r0, #0x77		; Before game starts, RGB LED should be set to white
 		BL illuminate_RGB_LED
 
-		;;; Various initialization steps
-
-		; When game starts, RGB LED should be set to green
-		; Each time the game levels up, decrease match register by 0.1 seconds (find that value)
-
+		LDR r4, =game_start_prompt
+		BL output_string	;Load the base address for the game start, and output to Putty
+		
+GAME_START_LOOP
+		LDR r0, =game_start_flag
+		LDR r1, [r0]
+		CMP r1, #0			;Compare the game_start_flag to 1, preventing enemies from being generated on the board (from the random number created by 'g')
+		BNE GAME_START_LOOP
+		
+		; Initialize random enemy locations on the gameboard (using random_number)
+		; Additional initialization steps?
+		
+		;Use infinite loop to wait for interrupts to occur, until user exits the game
 INFINITE_LOOP
 		B INFINITE_LOOP
 
@@ -220,8 +231,33 @@ TIMER0			; Check for Timer0 Interrupt
 		; Update the gameboard anytime timer reaches the match register value
 		; Move enemies
 		; Be sure to check is 4 areas (up, down, left, right) around player to see if enemy has been encountered
-		; If so, decrease number of lives by 1 (starting at 4)
-		; If number of lives becomes 0, load up end screen (display score, list options, i.e. press 'r' to restart or 'q' to quit)
+		; If so, decrease number of lives by 1 (starting at 4) and move player back 1 in opposite direction of enemy
+		; Once lives goes down to 0, output score (along with various components thereof) and game_end_prompt, change RGB LED to red
+		; Include a flag to single an 'all move phase' (player/fast and slow enemies moving at the same time) and a 'fast move phase' (only big enemies and player can move)
+		; If enemy count becomes 0, reset the board (somehow?), reset the enemy_count/generate new enemy_locations, player_location/player_character/player_direction ->
+		; Increase score for level up, decrease match register time by 0.1 seconds (until = 0.1 seconds)
+
+	;;; TEMPORARY (WILL NEED REVISION) ;;;
+		LDR r4, =score_prompt	;Output the score prompt 
+		BL output_string
+		LDR r4, =score_thousands
+		BL output_string
+		LDR r4, =score_hundreds
+		BL output_string
+		LDR r4, =score_tens
+		BL output_string
+		LDR r4, =score_ones
+		BL output_string
+		LDR r4, =game_timer
+		BL output_string
+		LDR r4, =timer_hundreds
+		BL output_string
+		LDR r4, =timer_tens
+		BL output_string
+		LDR r4, =timer_ones
+		BL output_string
+		LDR r4, =gameboard		;Output updated gameboard
+		BL output_string
 
 		LDMFD sp!, {r0-r12, lr}			; Restore registers
 		
@@ -435,7 +471,7 @@ GAME_START_CHECK
 		LDR r0, =game_start_flag	;Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
 		MOV r1, #0				;Use temporary register, storing the new game_start_flag
 		STR r1, [r0]			;Store the new game_start_flag, allowing the game to start
-	; Start the second timer? Allow the timer to also use a second match register?
+	; Start the second timer? Allow the first timer to also use a second match register?
 		LDR r0, =0xE0004008 	;Load the address for timer0 into r0
 		LDR r1, =random_number	;Load the address for the random number 
 		LDR r2, [r0]			;Load the current random value from the timer
@@ -458,7 +494,8 @@ AIR_HOSE_CHECK
 		; If ' ' (empty space), draw '=' and move temporary address (to keep track of location)
 		; If 'x' (small enemy) or 'B' (big enemy), remove the enemy (check if enemy address matches the current temporary address)
 		;															(If so, remove character from board, decrese the total number of enemies)
-		;															(Remove the air hose by working backwards until the player character is found
+		;															(Remove the air hose by working backwards until the player character is found)
+		
 		B FIQ_Exit
 
 CHECK_QUIT
@@ -495,7 +532,49 @@ SCORE_Small
 		CMP r0, #1				 ; If particular register value is 1 when entering routine,
 		BNE SCORE_Large 
 	; Increment score by 50 if player defeats small enemy
-
+		LDR r0, =score_tens		;Load the address for the tens place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x35			;Compare this value to 5
+		BLT INCREMENT_BY_5		;If < '5', simply increment by 5 and exit routine
+		CMP r1, #0x35			;If = '5', reset to 0, and increment hundreds place by 1 
+		BNE COMPARE_TO_6
+		MOV r1, #0x30			;Reset tens place to 0
+		STRB r1, [r0]			;Store that reset value back to score_tens
+		MOV r0, #2				
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_6
+		CMP r1, #0x36			;If = '6', reset to 1, and increment hundreds place by 1
+		BNE COMPARE_TO_7		
+		MOV r1, #0x31			;Reset tens place to 1
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_7
+		CMP r1, #0x37			;If = '7', reset to 2, and increment hundreds place by 1
+		BNE COMPARE_TO_8
+		MOV r1, #0x32			;Reset tens place to 2
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_8
+		CMP r1, #0x38			;If = '8', reset to 3, and increment hundreds place by 1
+		BNE COMPARE_TO_9
+		MOV r1, #0x33			;Reset tens place to 3
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_9
+		CMP r1, #0x39			;If = '9', reset to 4, and increment hundreds place by 1
+		BNE FINISHSCORE
+		MOV r1, #0x34			;Reset tens place to 4
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large
+INCREMENT_BY_5
+		ADD r1, r1, #5			;Increase the ASCII character representing the 10's place by 5
+		STRB r1, [r0]			;Store that new byte back to score_tens
+		B FINISHSCORE
+		
 ;;; UPDATE SCORE FOR LARGE ENEMY ;;;
 SCORE_Large
 		CMP r0, #2				 ; If particular register value is 2 when entering routine,
@@ -507,7 +586,7 @@ SCORE_Large
 		BNE HUNDREDS_INCREMENT
 		MOV r1, #0x30			;Reset the hundreds place of the score back to 0
 		STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
-		B SCORE_Thousands
+		B SCORE_Thousands		;Increment the thousands place
 HUNDREDS_INCREMENT
 		ADD r1, r1, #1			;Increment the ASCII value by 1
 		STRB r1, [r0]			;Store the value back into score_hundreds
@@ -517,21 +596,39 @@ HUNDREDS_INCREMENT
 SCORE_Level
 		CMP r0, #3				 ; If particular register value is 3 when entering routine,
 		BNE FINISHSCORE			 ; If particular register value is otherwise, exit routine
-	; Increment score by 150 if player passes level
-	   	
+	; Increment score by 200 if player passes level
+	   	LDR r0, =score_hundreds	;Load the address for the hundreds place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x38			;Compare this value to 8
+		BLT TWO_HUNDRED_INCREMENT	;If less than, simply increment value by 2
+		CMP r1, #0x38			
+		BNE COMPARE_9_HUNDRED
+		MOV r1, #0x30			;Reset the hundreds place of the score back to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
+		B SCORE_Thousands		;Increment the thousands place
+COMPARE_9_HUNDRED
+		CMP r1, #0x39			;Compare this value to 9
+		BNE FINISHSCORE
+		MOV r1, #0x31			;Reset the hundreds place back to 1
+		STRB r1, [r0]			;Store that new value back to scre_hundreds
+		B SCORE_Thousands
+TWO_HUNDRED_INCREMENT
+		ADD r1, r1, #2			;Increment the ASCII value by 2
+		STRB r1, [r0]			;Store the value back into score_hundreds
+		B FINISHSCORE
 
 SCORE_Thousands
 	; Check thousands place for incrementation if necessary
 	    LDR r0, =score_thousands	;Load the address for the thousands place into r0
 		LDRB r1, [r0]			;Load the ASCII value into r1
 		CMP r1, #0x39			;Compare this value to 9
-		BNE TENS_INCREMENT
+		BNE THOUSANDS_INCREMENT
 		MOV r1, #0x30			;Reset the thousands place of the score to 0
-		STRB r1, [r0]			;Store ASCII '0' back to score_tens
+		STRB r1, [r0]			;Store ASCII '0' back to score_thousands
 		B FINISHSCORE
 THOUSANDS_INCREMENT
 		ADD r1, r1, #1			;Increment the ASCII value by 1
-		STRB r1, [r0]			;Store the value back into score_tens
+		STRB r1, [r0]			;Store the value back into score_thousands
 
 FINISHSCORE
 		
@@ -544,9 +641,9 @@ move_enemy
 		STMFD sp!, {r0-r12, lr}
 	
 		; Grab location and enemy type from that location from memory
+		; Use r0 to signal which enemy is moved (x1, x2, or B)
 		; Check if 4 areas (up, down, left, right) around enemy are spaces (similar to player)
 		; Take random number/or generate another one? 
-		; 
 	
 		LDMFD sp!, {r0-r12, lr}
 		BX lr
