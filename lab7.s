@@ -17,17 +17,17 @@
 
 	ALIGN
 
-score_prompt = 0x0C, "SCORE: ",0	;Find location in memory of value, and adjust accordingly
+score_prompt = "SCORE: ",0	;Find location in memory of value, and adjust accordingly
 score_thousands = "0",0
 score_hundreds = "0",0
 score_tens = "0",0
 score_ones = "0",0
-
+	ALIGN
 game_timer = "    TIME: ",0
 timer_hundreds = "1",0
 timer_tens = "2",0
 timer_ones = "0",0xD,0xA,0
-
+	ALIGN
 gameboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
 			= "Z                   Z",0xD,0xA
 			= "Z###################Z",0xD,0xA
@@ -63,21 +63,32 @@ game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = "Press 'g' to start ",0xD,0xA,0
 	ALIGN
 game_end_prompt = " THANKS FOR PLAYING ",0xD,0xA
-				= " Press 'r' to restart the game, or 'q' to quit "0xD,0xA,0
+				= " Press 'r' to restart the game, or 'q' to quit ",0xD,0xA,0
+	ALIGN
 
-player_location = 0x00000000	; Gameboard + 172 memory locations away to get to center (initialized each time the board is redrawn for new level
+player_location = 0x00000000	; Gameboard + 194 memory locations away to get to center (initialized each time the board is redrawn for new level
+	ALIGN
 game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being drawn, until user presses 'g'
+	ALIGN
 pause_flag = 0x00000000			; Pause flag, set to 1 when user presses external interrupt
+	ALIGN
 enemy_count = 0x00000003		; Number of enemies the spawn on the board, decrease after contact with air hose, reset to 3 on level up/initialization
+	ALIGN
 enemy1_location = 0x00000000
+	ALIGN
 enemy2_location = 0x00000000	; Enemy locations stored in memory, randomized during initialization of gameboard
+	ALIGN
 enemyB_location = 0x00000000
+	ALIGN
 random_number = 0x00000000		; Random number generated when user presses enter to start the game
+	ALIGN
 game_timer_count = 120			; Total time (2 minutes) for the game to run, reset to 120 on initialization
+	ALIGN
 player_lives = 0x00000000		; Number of lives, initialize to 4 when the game starts
 	ALIGN
-player_character = ">"			; Initially ">"	corresponding to right
-player_direction = "d"			; Initially "d" corresponding to right
+player_character = 0x3E		; Initially ">"	corresponding to right
+player_direction = 0x64		; Initially "d" corresponding to right
+	ALIGN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;MAIN ROUTINE;;;
 lab7							; Use 115200 for baud rate in Putty
@@ -111,12 +122,14 @@ RESET_GAME
 	;; Player Location ;;
 		LDR r0, =player_location
 		LDR r1, =gameboard	;Load the base address of the gameboard 
-		ADD r1, r1, #172	;Add 172 to find the address at the center of the board
+		ADD r1, r1, #194	;Add 194 to find the address at the center of the board
 		STR r1, [r0]		;Store this central address at player_location at game start (and on level up)
 	
 		MOV r0, #0x77		; Before game starts, RGB LED should be set to white
 		BL illuminate_RGB_LED
 
+		MOV r0, #0xC
+		BL output_char
 		LDR r4, =game_start_prompt
 		BL output_string	;Load the base address for the game start, and output to Putty
 		
@@ -238,6 +251,8 @@ TIMER0			; Check for Timer0 Interrupt
 		; Increase score for level up, decrease match register time by 0.1 seconds (until = 0.1 seconds)
 
 	;;; TEMPORARY (WILL NEED REVISION) ;;;
+		MOV r0, #0xC
+		BL output_char
 		LDR r4, =score_prompt	;Output the score prompt 
 		BL output_string
 		LDR r4, =score_thousands
@@ -320,7 +335,7 @@ UART0			  ; Check for UART0 interrupt
 ;;;;;;UPDATE TO MOVE UP;;;;;;
 UP_CHECK
 		CMP r0, #0x77			;Check if the input direction is 'w', up
-		BNE DOWN_CHECK			;If not, branch to next check
+		BNE LEFT_CHECK			;If not, branch to next check
 	; Compare the player's current direction to the new input direction
 		LDR r1, =player_direction	;Load the player's previous direction
 		LDRB r2, [r1]
@@ -340,17 +355,20 @@ UP_CHECK
 		CMP r2, r5				;Compare the next character the player would be moving to with '#'
 		BLEQ update_score		;If character matches, update the score (increment value by 10)
 	; Move the player character up, regardless of if the score was incremented
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
 		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
-		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		STRB r5, [r4]			;Change the old location to blankspace character to clear
 		LDR r5, =player_character	;Load the address for the player's current character
 		LDRB r6, [r5]			;Load the contents, the character representing the player
+		SUB r4, r4, #23			;Find the address of memory -23 positions away (1 y-coordinate up)
 		STRB r6, [r4]			;Store the player character at the new memory location (moving the player up)
 		STR r4, [r3]			;Update the player's location for further use
 		B FIQ_Exit
 UP_CHANGE_DIRECT
 		STRB r0, [r1]			;Store the new direction into player's direction
 		MOV r2, #0x5E			;Temporarily store the character '^', representing up movement
-		LDR r5, player_character	;Load the address for the player's current character
+		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
 		B FIQ_Exit
 
@@ -376,18 +394,21 @@ LEFT_CHECK
 		MOV r2, #0x23			;Load value for '#' (dirt)
 		CMP r2, r5				;Compare the next character the player would be moving to with '#'
 		BLEQ update_score		;If character matches, update the score (increment value by 10)
-	; Move the player character up, regardless of if the score was incremented
+	; Move the player character left, regardless of if the score was incremented
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
 		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
-		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		STRB r5, [r4]			;Change the old location to blankspace character to clear
 		LDR r5, =player_character	;Load the address for the player's current character
 		LDRB r6, [r5]			;Load the contents, the character representing the player
+		SUB r4, r4, #1			;Find the address of memory -1 positions away (1 x-coordinate left)
 		STRB r6, [r4]			;Store the player character at the new memory location (moving the player left)
 		STR r4, [r3]			;Update the player's location for further use
 		B FIQ_Exit
 LEFT_CHANGE_DIRECT
 		STRB r0, [r1]			;Store the new direction into player's direction
-		MOV r2, #0x5E			;Temporarily store the character '<', representing left movement
-		LDR r5, player_character	;Load the address for the player's current character
+		MOV r2, #0x3C			;Temporarily store the character '<', representing left movement
+		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
 		B FIQ_Exit
 
@@ -413,18 +434,21 @@ DOWN_CHECK
 		MOV r2, #0x23			;Load value for '#' (dirt)
 		CMP r2, r5				;Compare the next character the player would be moving to with '#'
 		BLEQ update_score		;If character matches, update the score (increment value by 10)
-	; Move the player character up, regardless of if the score was incremented
+	; Move the player character down, regardless of if the score was incremented
+		LDR r3, =player_location	;Find the player's current location
+		LDR r4, [r3]
 		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
-		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		STRB r5, [r4]			;Change the old location to blankspace character to clear
 		LDR r5, =player_character	;Load the address for the player's current character
 		LDRB r6, [r5]			;Load the contents, the character representing the player
+		ADD r4, r4, #23			;Find the address of memory 23 positions away (1 y-coordinate down)
 		STRB r6, [r4]			;Store the player character at the new memory location (moving the player down)
 		STR r4, [r3]			;Update the player's location for further use
 		B FIQ_Exit
 DOWN_CHANGE_DIRECT
 		STRB r0, [r1]			;Store the new direction into player's direction
 		MOV r2, #0x76			;Temporarily store the character 'v', representing down movement
-		LDR r5, player_character	;Load the address for the player's current character
+		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
 		B FIQ_Exit
 
@@ -451,17 +475,20 @@ RIGHT_CHECK
 		CMP r2, r5				;Compare the next character the player would be moving to with '#'
 		BLEQ update_score		;If character matches, update the score (increment value by 10)
 	; Move the player character up, regardless of if the score was incremented
+		LDR r3, =player_location
+		LDR r4, [r3]
 		MOV r5, #0x20			;Move blankspace char, ' ', into temporary register
-		STRB r5, [r3]			;Change the old location to blankspace character to clear
+		STRB r5, [r4]			;Change the old location to blankspace character to clear
 		LDR r5, =player_character	;Load the address for the player's current character
 		LDRB r6, [r5]			;Load the contents, the character representing the player
+		ADD r4, r4, #1
 		STRB r6, [r4]			;Store the player character at the new memory location (moving the player right)
 		STR r4, [r3]			;Update the player's location for further use
 		B FIQ_Exit
 RIGHT_CHANGE_DIRECT
 		STRB r0, [r1]			;Store the new direction into player's direction
-		MOV r2, #0x5E			;Temporarily store the character '>', representing right movement
-		LDR r5, player_character	;Load the address for the player's current character
+		MOV r2, #0x3E			;Temporarily store the character '>', representing right movement
+		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
 		B FIQ_Exit
 
@@ -521,7 +548,7 @@ update_score
 		BNE TENS_INCREMENT
 		MOV r1, #0x30			;Reset the tens place of the score to 0
 		STRB r1, [r0]			;Store ASCII '0' back to score_tens
-		B HUNDREDS_INCREMENT
+		B SCORE_Large
 TENS_INCREMENT
 		ADD r1, r1, #1			;Increment the ASCII value by 1
 		STRB r1, [r0]			;Store the value back into score_tens
@@ -588,6 +615,8 @@ SCORE_Large
 		STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
 		B SCORE_Thousands		;Increment the thousands place
 HUNDREDS_INCREMENT
+		LDR r0, =score_hundreds
+		LDRB r1, [r0]
 		ADD r1, r1, #1			;Increment the ASCII value by 1
 		STRB r1, [r0]			;Store the value back into score_hundreds
 		B FINISHSCORE
