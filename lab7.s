@@ -140,7 +140,8 @@ GAME_START_LOOP
 		BNE GAME_START_LOOP
 		
 		; Initialize random enemy locations on the gameboard (using random_number)
-		; Additional initialization steps?
+		; Clear out back space on left and right of enemy (Unless area is 'Z', the wall)
+		; Start the second timer to keep track to 2 min game time
 		
 		;Use infinite loop to wait for interrupts to occur, until user exits the game
 INFINITE_LOOP
@@ -241,16 +242,132 @@ TIMER0			; Check for Timer0 Interrupt
 		STMFD sp!, {r0-r12, lr}	; Save registers
 		
 		; Timer0 Handling Code (i.e. update the gameboard)
-		; Update the gameboard anytime timer reaches the match register value
 		; Move enemies
-		; Be sure to check is 4 areas (up, down, left, right) around player to see if enemy has been encountered
-		; If so, decrease number of lives by 1 (starting at 4) and move player back 1 in opposite direction of enemy
-		; Once lives goes down to 0, output score (along with various components thereof) and game_end_prompt, change RGB LED to red
 		; Include a flag to single an 'all move phase' (player/fast and slow enemies moving at the same time) and a 'fast move phase' (only big enemies and player can move)
-		; If enemy count becomes 0, reset the board (somehow?), reset the enemy_count/generate new enemy_locations, player_location/player_character/player_direction ->
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; CHECK AREA AROUND PLAYER FOR ENEMIES ;;;
+		LDR r0, =player_location	;Load address for player's location
+		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
+		SUB r2, r1, #23				;Find the location in memory 23 places back (1 y-coordinate up)
+		LDR r3, [r2]				;Load the contents from that address
+		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
+		BNE LARGE_UP_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]				
+		B LIFE_CHECK
+LARGE_UP_CHECK
+		CMP r3, #0x42				;Compare contents with 'B' (large enemy)
+		BNE SMALL_LEFT_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+		B LIFE_CHECK
+SMALL_LEFT_CHECK
+		LDR r0, =player_location	;Load address for player's location
+		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
+		SUB r2, r1, #1				;Find the location in memory 1 place back (1 x-coordinate left)
+		LDR r3, [r2]				;Load the contents from that address
+		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
+		BNE LARGE_LEFT_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+		B LIFE_CHECK
+LARGE_LEFT_CHECK
+		CMP r3, #0x42				;Compare contents with 'B' (large enemy)
+		BNE SMALL_DOWN_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+		B LIFE_CHECK
+SMALL_DOWN_CHECK
+		LDR r0, =player_location	;Load the address for player's location
+		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
+		ADD r2, r1, #23				;Find the location in memory 23 places down (1 y-coordinate down)
+		LDR r3, [r2]				;Load the contents from that address
+		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
+		BNE LARGE_DOWN_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+		B LIFE_CHECK
+LARGE_DOWN_CHECK
+		CMP r3, #0x42				;Compare contents with 'B' (large enemy)
+		BNE SMALL_RIGHT_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+		B LIFE_CHECK
+SMALL_RIGHT_CHECK
+		LDR r0, =player_location	;Load the address for player's location
+		LDR r1, [r0]				;Load the contents represeting the player location on the gameboard string
+		ADD r2, r1, #1				;Find the location in memory 1 place forward (1 x-coordinate right)
+		LDR r3, [r2]				;Load the contents from that address
+		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
+		BNE LARGE_RIGHT_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+		B LIFE_CHECK
+LARGE_RIGHT_CHECK
+		CMP r3, #0x42				;Compare contents with 'B' (large enemy)
+		BNE LIFE_CHECK
+		LDR r0, =player_lives
+		LDR r1, [r0]
+		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
+		STR r1, [r0]
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; CHECK NUMBER OF LIVES ;;;
+LIFE_CHECK	
+		LDR r0, =player_lives		;Load the address for the player's lives
+		LDR r1, [r0]				;Load current number of player lives into r1
+		CMP r1, #4
+		BNE THREE_LIVES
+		MOV r0, #15					;If number of lives is 4, set LEDs to display 15 (all illuminated)
+		BL illuminate_LEDs
+		B LEVEL_UP_CHECK
+THREE_LIVES
+		CMP r1, #3
+		BNE TWO_LIVES
+		MOV r0, #7					;If number of lives is 3, set LEDs to display 7 (3 illuminated)
+		BL illuminate_LEDs
+		B LEVEL_UP_CHECK
+TWO_LIVES
+		CMP r1, #2
+		BNE ONE_LIFE
+		MOV r0, #3
+		BL illuminate_LEDs
+		B LEVEL_UP_CHECK
+ONE_LIFE
+		CMP r1, #1
+		BNE ZERO_LIVES
+		MOV r0, #1
+		BL illuminate_LEDs
+		B LEVEL_UP_CHECK
+ZERO_LIVES
+		CMP r1, #0
+		BNE LEVEL_UP_CHECK
+	;;; GAME OVER LOGIC ;;;
+		; Once lives goes down to 0, output score (along with various components thereof) and game_end_prompt, change RGB LED to red
+LEVEL_UP_CHECK
+		LDR r0, =enemy_count		;Load the address of the number of enemies currently on the board
+		LDR r1, [r0]				;Load the current number of enemies on the board
+		CMP r1, #0
+		BNE OUTPUTS
+		; If enemy count becomes 0, reset the board (somehow?), reset the enemy_count/generate new enemy_locations, player_location/player_character/player_direction ->		
 		; Increase score for level up, decrease match register time by 0.1 seconds (until = 0.1 seconds)
 
-	;;; TEMPORARY (WILL NEED REVISION) ;;;
+	;;; TEMPORARY (MIGHT NEED REVISION) ;;;
+OUTPUTS
 		MOV r0, #0xC
 		BL output_char
 		LDR r4, =score_prompt	;Output the score prompt 
@@ -498,7 +615,7 @@ GAME_START_CHECK
 		LDR r0, =game_start_flag	;Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
 		MOV r1, #0				;Use temporary register, storing the new game_start_flag
 		STR r1, [r0]			;Store the new game_start_flag, allowing the game to start
-	; Start the second timer? Allow the first timer to also use a second match register?
+	; Start the second timer
 		LDR r0, =0xE0004008 	;Load the address for timer0 into r0
 		LDR r1, =random_number	;Load the address for the random number 
 		LDR r2, [r0]			;Load the current random value from the timer
@@ -554,7 +671,7 @@ TENS_INCREMENT
 		STRB r1, [r0]			;Store the value back into score_tens
 		B FINISHSCORE
 
-;;; UPDATE SCORE FOR SMALL ENEMY ;;;
+	;;; UPDATE SCORE FOR SMALL ENEMY ;;;
 SCORE_Small
 		CMP r0, #1				 ; If particular register value is 1 when entering routine,
 		BNE SCORE_Large 
@@ -602,7 +719,7 @@ INCREMENT_BY_5
 		STRB r1, [r0]			;Store that new byte back to score_tens
 		B FINISHSCORE
 		
-;;; UPDATE SCORE FOR LARGE ENEMY ;;;
+	;;; UPDATE SCORE FOR LARGE ENEMY ;;;
 SCORE_Large
 		CMP r0, #2				 ; If particular register value is 2 when entering routine,
 		BNE SCORE_Level
@@ -621,7 +738,7 @@ HUNDREDS_INCREMENT
 		STRB r1, [r0]			;Store the value back into score_hundreds
 		B FINISHSCORE
 
-;;; UPDATE SCORE FOR LEVEL UP ;;;
+	;;; UPDATE SCORE FOR LEVEL UP ;;;
 SCORE_Level
 		CMP r0, #3				 ; If particular register value is 3 when entering routine,
 		BNE FINISHSCORE			 ; If particular register value is otherwise, exit routine
@@ -645,7 +762,7 @@ TWO_HUNDRED_INCREMENT
 		ADD r1, r1, #2			;Increment the ASCII value by 2
 		STRB r1, [r0]			;Store the value back into score_hundreds
 		B FINISHSCORE
-
+	;;; INCREMENT THOUSANDS PLACE (IF NECESSARY)
 SCORE_Thousands
 	; Check thousands place for incrementation if necessary
 	    LDR r0, =score_thousands	;Load the address for the thousands place into r0
@@ -671,7 +788,7 @@ move_enemy
 	
 		; Grab location and enemy type from that location from memory
 		; Use r0 to signal which enemy is moved (x1, x2, or B)
-		; Check if 4 areas (up, down, left, right) around enemy are spaces (similar to player)
+		; Move the enemy left and right between dirt
 		; Take random number/or generate another one? 
 	
 		LDMFD sp!, {r0-r12, lr}
