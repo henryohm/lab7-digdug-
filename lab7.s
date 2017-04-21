@@ -72,6 +72,8 @@ game_start_flag = 0x00000001	; Initially 1, preventing gameboard from being draw
 	ALIGN
 pause_flag = 0x00000000			; Pause flag, set to 1 when user presses external interrupt
 	ALIGN
+movement_phase_flag = 0x00000000; Movement phase flag, (if 1, move all enemies, reset to 0 after all-move phase) (If 0, only move large enemies, set to 1 after)
+	ALIGN
 enemy_count = 0x00000003		; Number of enemies the spawn on the board, decrease after contact with air hose, reset to 3 on level up/initialization
 	ALIGN
 enemy1_location = 0x00000000
@@ -88,6 +90,9 @@ player_lives = 0x00000000		; Number of lives, initialize to 4 when the game star
 	ALIGN
 player_character = 0x3E		; Initially ">"	corresponding to right
 player_direction = 0x64		; Initially "d" corresponding to right
+enemy1_direction = 0x61		; Initially "a" (left)
+enemy2_direction = 0x64		; Initially "d" (right)
+enemyB_direction = 0x64		; Initially "d" (right)
 	ALIGN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;MAIN ROUTINE;;;
@@ -124,7 +129,15 @@ RESET_GAME
 		LDR r1, =gameboard	;Load the base address of the gameboard 
 		ADD r1, r1, #194	;Add 194 to find the address at the center of the board
 		STR r1, [r0]		;Store this central address at player_location at game start (and on level up)
-	
+	;; Player Direction ;;
+		LDR r0, =player_direction
+		MOV r1, #0x64		;Set the player direction to 'd'
+		STRB r1, [r0]
+	;; Player Character ;;
+		LDR r0, player_character
+		MOV r1, #0x3E		;Set the player character to '>'
+		STRB r1, [r0]
+	;; RGB LED setting ;;
 		MOV r0, #0x77		; Before game starts, RGB LED should be set to white
 		BL illuminate_RGB_LED
 
@@ -133,6 +146,8 @@ RESET_GAME
 		LDR r4, =game_start_prompt
 		BL output_string	;Load the base address for the game start, and output to Putty
 		
+	;; Reset the contents of the board (somehow?) ;;
+		
 GAME_START_LOOP
 		LDR r0, =game_start_flag
 		LDR r1, [r0]
@@ -140,7 +155,7 @@ GAME_START_LOOP
 		BNE GAME_START_LOOP
 		
 		; Initialize random enemy locations on the gameboard (using random_number)
-		; Clear out back space on left and right of enemy (Unless area is 'Z', the wall)
+		; Clear out blank space on left and right of enemy (Unless area is 'Z', the wall)
 		; Start the second timer to keep track to 2 min game time
 		
 		;Use infinite loop to wait for interrupts to occur, until user exits the game
@@ -148,7 +163,6 @@ INFINITE_LOOP
 		B INFINITE_LOOP
 
 QUIT
-		;Set RGB LED to red?
 		LDMFD sp!, {lr}
 		BX lr
 
@@ -242,8 +256,12 @@ TIMER0			; Check for Timer0 Interrupt
 		STMFD sp!, {r0-r12, lr}	; Save registers
 		
 		; Timer0 Handling Code (i.e. update the gameboard)
-		; Move enemies
-		; Include a flag to single an 'all move phase' (player/fast and slow enemies moving at the same time) and a 'fast move phase' (only big enemies and player can move)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; ENEMY MOVEMENT PHASE ;;;
+		; Move large enemy, check value of movement_phase_flag
+		; If flag is 1, move small enemies in same update and reset value to 0
+		; If flag is 0, only move large enemy and set value to 1 for next iteration
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; CHECK AREA AROUND PLAYER FOR ENEMIES ;;;
 		LDR r0, =player_location	;Load address for player's location
@@ -344,20 +362,41 @@ THREE_LIVES
 TWO_LIVES
 		CMP r1, #2
 		BNE ONE_LIFE
-		MOV r0, #3
+		MOV r0, #3					;If number of lives is 2, set LEDs to display 3 (2 illuminated)
 		BL illuminate_LEDs
 		B LEVEL_UP_CHECK
 ONE_LIFE
 		CMP r1, #1
 		BNE ZERO_LIVES
-		MOV r0, #1
+		MOV r0, #1					;If number of lives is 1, set LEDs to display 1 (1 illuminated)
 		BL illuminate_LEDs
 		B LEVEL_UP_CHECK
 ZERO_LIVES
 		CMP r1, #0
-		BNE LEVEL_UP_CHECK
+		BNE LEVEL_UP_CHECK			;If number of lives is 0, output score, game_end_prompt, and set game_start_flag to 1 (to prevent further timer interrupts)
 	;;; GAME OVER LOGIC ;;;
-		; Once lives goes down to 0, output score (along with various components thereof) and game_end_prompt, change RGB LED to red
+GAME_OVER_CHECK
+		MOV r0, #0xC
+		BL output_char
+		LDR r4, =score_prompt		;Output score prompt
+		BL output_string
+		LDR r4, =score_thousands
+		BL output_string
+		LDR r4, =score_hundreds
+		BL output_string
+		LDR r4, =score_tens
+		BL output_string
+		LDR r4, =score_ones
+		BL output_string
+		LDR r4, =game_end_prompt
+		BL output_string
+		MOV r0, #0x72
+		BL illuminate_RGB_LED		;Illuminate RGB LED with red to signal game over
+		LDR r0, =game_start_flag
+		MOV r1, #1					;Set the game_start_flag to 1
+		STR r1, [r0]				;Store new flag in memory
+		B NO_NEW_OUTPUTS
+		
 LEVEL_UP_CHECK
 		LDR r0, =enemy_count		;Load the address of the number of enemies currently on the board
 		LDR r1, [r0]				;Load the current number of enemies on the board
@@ -391,6 +430,8 @@ OUTPUTS
 		LDR r4, =gameboard		;Output updated gameboard
 		BL output_string
 
+NO_NEW_OUTPUTS					;Branch here after game_over_check or level_up_check
+
 		LDMFD sp!, {r0-r12, lr}			; Restore registers
 		
 		LDR r0, =0xE0004000
@@ -417,7 +458,6 @@ EINT1			; Check for EINT1 interrupt
 		MOV r0, #0x62		;Load value for 'b' for RGB LED
 		BL illuminate_RGB_LED	;Change the RGB LED to blue, indicating pause
 		B ENT_Exit			
-
 UNPAUSE						;r0 still contains address of pause flag
 		MOV r1, #0			;Temp register to hold new pause flag value
 		STR r1, [r0]		;Reset the pause value value (change to 0)
@@ -615,7 +655,6 @@ GAME_START_CHECK
 		LDR r0, =game_start_flag	;Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
 		MOV r1, #0				;Use temporary register, storing the new game_start_flag
 		STR r1, [r0]			;Store the new game_start_flag, allowing the game to start
-	; Start the second timer
 		LDR r0, =0xE0004008 	;Load the address for timer0 into r0
 		LDR r1, =random_number	;Load the address for the random number 
 		LDR r2, [r0]			;Load the current random value from the timer
@@ -631,6 +670,12 @@ RESTART_CHECK
 AIR_HOSE_CHECK
 		CMP r0, #0x20			; Check if input character is ' ' (launch air hose)
 		BNE CHECK_QUIT			; If not, branch to next check
+		
+	;;; Generate a new random number whenever hose is launched (for enemy placements in next level) ;;;
+		LDR r0, =0xE0004008 	;Load the address for timer0 into r0
+		LDR r1, =random_number	;Load the address for the random number 
+		LDR r2, [r0]			;Load the current random value from the timer
+		STR r2, [r1]			;Store that timer value to the random number (ensuring it's random based on the user)
 		
 		; Check the user's currect direction, begin launching '=' (air hose) in that direction
 		; Check the next space along the player's path
@@ -786,11 +831,138 @@ FINISHSCORE
 move_enemy
 		STMFD sp!, {r0-r12, lr}
 	
-		; Grab location and enemy type from that location from memory
-		; Use r0 to signal which enemy is moved (x1, x2, or B)
-		; Move the enemy left and right between dirt
-		; Take random number/or generate another one? 
-	
+;;; MOVEMENT LOGIC FOR SMALL ENEMY 1 ;;;
+		CMP r0, #0				;Compare to flag value, if 0, grab enemy 1 location and move them
+		BNE SMALL_ENEMY_TWO
+		LDR r0, =enemy1_location
+		LDR r1, [r0]			;Load the location for the first enemy and compare to 0 (set value to 0 if enemy is destroyed)
+		CMP r1, #0
+		BEQ END_ENEMY_MOVEMENT	;If value for location is 0, the enemy was destroyed by the player (Don't move)
+		LDR r2, =enemy1_direction
+		LDRB r3, [r2]			;Load the byte representing the current direction of movement
+		CMP r3, #0x64
+		BEQ ENEMY1_RIGHT		;Compare direction of movement to 'd' (if not, move left)
+		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY1_CHANGE_DIRECT_right
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy1_location
+		B END_ENEMY_MOVEMENT
+ENEMY1_RIGHT
+		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY1_CHANGE_DIRECT_left
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy1_location
+		B END_ENEMY_MOVEMENT
+ENEMY1_CHANGE_DIRECT_right
+		LDR r0, =enemy1_direction
+		MOV r1, #0x64			;Change byte direction to 'd' for enemy 1
+		STRB r1, [r0]			;Store that byte back to enemy1_direction
+		B END_ENEMY_MOVEMENT
+ENEMY1_CHANGE_DIRECT_left
+		LDR r0, =enemy1_direction
+		MOV r1, #0x61			;Change byte direction to 'a' for enemy 1
+		STRB r1, [r0]
+		B END_ENEMY_MOVEMENT
+
+;;; MOVEMENT LOGIC FOR SMALL ENEMY 2 ;;;
+SMALL_ENEMY_TWO
+		CMP r0, #1				;Compare flag value, if 1, grab enemy 2 location and move them
+		BNE LARGE_ENEMY_MOVEMENT
+		LDR r0, =enemy2_location
+		LDR r1, [r0]			;Load the locaiton for the first enemy and compare to 0 (set value to 0 if enemy was destoryed)
+		CMP r1, #0
+		BEQ END_ENEMY_MOVEMENT	;If value for location is 0, the enemy was destroyed by the player, (Don't move)
+		LDR r2, =enemy2_direction
+		LDRB r3, [r2]			;Load the byte representing the current direction of movement
+		CMP r3, #0x64
+		BEQ ENEMY2_RIGHT		;Compare direction of movement to 'd' (if not, move left)
+		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY2_CHANGE_DIRECT_right
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy2_location
+		B END_ENEMY_MOVEMENT
+ENEMY2_RIGHT
+		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY2_CHANGE_DIRECT_left
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy1_location
+		B END_ENEMY_MOVEMENT
+ENEMY2_CHANGE_DIRECT_right
+		LDR r0, =enemy2_direction
+		MOV r1, #0x64			;Change byte direction to 'd' for enemy 2
+		STRB r1, [r0]			;Store that byte back to enemy1_direction
+		B END_ENEMY_MOVEMENT
+ENEMY2_CHANGE_DIRECT_left
+		LDR r0, =enemy2_direction
+		MOV r1, #0x61			;Change byte direction to 'a' for enemy 2
+		STRB r1, [r0]
+		B END_ENEMY_MOVEMENT
+		
+;;; MOVEMENT LOGIC FOR LARGE ENEMY ;;;
+LARGE_ENEMY_MOVEMENT
+		CMP r0, #2				;Compare flag value, if 2, grab large enemy location and move them
+		BNE END_ENEMY_MOVEMENT
+		LDR r0, =enemyB_location
+		LDR r1, [r0]			;Load the location for the first enemy and compare to 0 (set value to 0 if enemy was destroyed)
+		CMP r1, #0
+		BEQ END_ENEMY_MOVEMENT	;If value for location is 0, the enemy was destroyed by the player, (Don't move)
+		LDR r2, =enemyB_direction
+		LDRB r3, [r2]			;Load the byte representing the current direction of movement
+		CMP r3, #0x64
+		BEQ ENEMYB_RIGHT		;Compare direction of movement to 'd' (if not, move left)
+		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMYB_CHANGE_DIRECT_right
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemyB_location
+		B END_ENEMY_MOVEMENT
+ENEMYB_RIGHT
+		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMYB_CHANGE_DIRECT_left
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemyB_location
+		B END_ENEMY_MOVEMENT
+ENEMYB_CHANGE_DIRECT_right
+		LDR r0, =enemy1_direction
+		MOV r1, #0x64			;Change byte direction to 'd' for enemy B
+		STRB r1, [r0]			;Store that byte back to enemy1_direction
+		B END_ENEMY_MOVEMENT
+ENEMYB_CHANGE_DIRECT_left
+		LDR r0, =enemyB_direction
+		MOV r1, #0x61			;Change byte direction to 'a' for enemy B
+		STRB r1, [r0]
+		B END_ENEMY_MOVEMENT
+
+END_ENEMY_MOVEMENT
 		LDMFD sp!, {r0-r12, lr}
 		BX lr
 
