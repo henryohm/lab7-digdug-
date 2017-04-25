@@ -191,7 +191,7 @@ GAME_START_LOOP
 		; Clear out blank space on left and right of enemy (Unless area is 'Z', the wall)
 		; Start the second timer to keep track to 2 min game time
 		
-		;Use infinite loop to wait for interrupts to occur, until user exits the game
+		; Use infinite loop to wait for interrupts to occur, until user exits the game
 INFINITE_LOOP
 		B INFINITE_LOOP
 
@@ -308,12 +308,28 @@ TIMER0			; Check for Timer0 Interrupt
 		; Timer0 Handling Code (i.e. update the gameboard)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; ENEMY MOVEMENT PHASE ;;;
-		; Move large enemy, check value of movement_phase_flag
-		; If flag is 1, move small enemies in same update and reset value to 0
-		; If flag is 0, only move large enemy and set value to 1 for next iteration
-
+		; Check value of movement_phase_flag
+		MOV r0, #2
+		BL move_enemy				;Move the large enemy
+		LDR r0, =movement_phase_flag
+		LDR r1, [r0]
+		CMP r1, #1			 		;Load and compare the movement phase flag to 1
+		BNE END_ENEMY_MOVE			;If flag is 0, only move large enemy and set value to 1 for next iteration
+	; If flag is 1, move small enemies in same update and reset value to 0	
+		MOV r0, #0
+		BL move_enemy				;Move the first small enemy
+		MOV r0, #1
+		BL move_enemy				;Move the second small enemy
+		MOV r1, #0
+		LDR r0, =movement_phase_flag
+		STR r1, [r0]
+		B SMALL_UP_CHECK
+END_ENEMY_MOVE
+ 		MOV r1, #1
+		STR r1, [r0]
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; CHECK AREA AROUND PLAYER FOR ENEMIES ;;;
+SMALL_UP_CHECK
 		LDR r0, =player_location	;Load address for player's location
 		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
 		SUB r2, r1, #23				;Find the location in memory 23 places back (1 y-coordinate up)
@@ -460,7 +476,38 @@ LEVEL_UP_CHECK
 		BNE OUTPUTS
 		BL reset_current_board		;Reset the current gameboard to its original state
 		; If enemy count becomes 0, reset the board (somehow?), reset the enemy_count/generate new enemy_locations, player_location/player_character/player_direction ->		
-		; Increase score for level up, decrease match register time by 0.1 seconds (until = 0.1 seconds)
+	; Increment level count on 7-seg display
+		
+	; Reset enemy count
+		LDR r0, =enemy_count
+		MOV r1, #3			; Initialize total number of enemies to 3 on level up
+		STR r1, [r0]
+	; Generate new enemy locations
+
+	; Reset player_location
+		LDR r0, =player_location
+		LDR r1, =gameboard	; Load the base address of the gameboard 
+		ADD r1, r1, #194	; Add 194 to find the address at the center of the board
+		STR r1, [r0]		; Store this central address at player_location on level up
+	; Reset player_character
+		LDR r0, =player_character
+		MOV r1, #0x3E		; Set the player character to '>'
+		STRB r1, [r0]
+	; Reset player_direction
+		LDR r0, =player_direction
+		MOV r1, #0x64		; Set the player direction to 'd'
+		STRB r1, [r0]
+	; Increment the score for completing a level	
+		MOV r0, #3
+		BL update_score				;Set register value to 3, signalling score to increment by 200
+	; Adjust match register value
+		LDR r0, =0xE000401C			;Load address for Timer0 MR1
+		LDR r1, [r0]				;Load the value into r1
+		LDR r2, =0x0001C200
+		CMP r1, r2					;Compare to updates every 0.1 seconds (10 per second i.e. 1,843,200 tics per second)
+		BEQ	OUTPUTS					
+		SUB r1, r1, r2				;Decrease the period of the board updates by 0.1 seconds
+		STR r1, [r0]				;Store the new MR1 value back to MR1
 
 	;;; TEMPORARY (MIGHT NEED REVISION) ;;;
 OUTPUTS
@@ -516,10 +563,12 @@ TIMER1				; Check for Timer1 interrupt
 		
 		STMFD sp!, {r0-r12, lr}	; Save registers
 
+		; Timer1 Handling Code (i.e. update the 2-min game timer)
+	; Decrement background timer
 		LDR r0, =game_timer_count
 		LDR r1, [r0]				;Load the value for the game timer
 		SUB r1, r1, #1				;Decrement the value by 1
-		STR r1 [r0]					;Store the game timer value back
+		STR r1, [r0]					;Store the game timer value back
 	; Decrement the on-screen timer
 		LDR r0, =timer_ones
 		LDRB r1, [r0]				;Load the digit in the timer_ones place
