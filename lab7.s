@@ -46,6 +46,24 @@ gameboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
 			= "Z###################Z",0xD,0xA
 			= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA,0
 	ALIGN
+resetboard 	= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA
+			= "Z                   Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z######## > ########Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "Z###################Z",0xD,0xA
+			= "ZZZZZZZZZZZZZZZZZZZZZ",0xD,0xA,0
+	ALIGN
 game_start_prompt = "     WELCOME TO DIG-DUG     ",0xD,0xA
 				  = 0xD,0xA
 				  = "Use WASD to Move Player and dig through the dirt",0xD,0xA
@@ -96,57 +114,72 @@ enemyB_direction = 0x64		; Initially "d" (right)
 	ALIGN
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;MAIN ROUTINE;;;
-lab7							; Use 115200 for baud rate in Putty
+lab7						; Use 115200 for baud rate in Putty
 		STMFD sp!, {lr}
 RESET_GAME
 		LDR r0, =game_start_flag
-		MOV r1, #1					; Reset the game start flag, in case of 'r' (restart)
+		MOV r1, #1			; Reset the game start flag, in case of 'r' (restart)
 		STR r1, [r0]
 	  	BL pin_connect_block_setup
 		BL uart_init
-		; Timer control register to manually reset timer
+	; Timer control register to manually reset timer
 		LDR r0, =0xE0004004	;Load address of Timer 0 Control Register (T0TCR)
 		LDR r1, [r0]		;Load the contents of T0TCR
 		ORR r1, r1, #2		;Set 1 to reset TC at start of program
-		STR r1, [r0]		;Store the contents back to reset timer		
+		STR r1, [r0]		;Store the contents back to reset timer
+		
+		LDR r0, =0xE0008004	;Load address for Timer 1 Control Register (T1TCR)
+		LDR r1, [r0]		;Load the contents of T1TCR
+		ORR r1, r1, #2		;Set 1 to reset TC at start of program
+		STR r1, [r0]		;Store the contents back to reset timer
 		BL interrupt_init
 		
 		;Initialization
 	;; Player Lives ;;
 		LDR r0, =player_lives
-		MOV r1, #4			;Initialize player lives to 4 at game start
+		MOV r1, #4			; Initialize player lives to 4 at game start
 		STR r1, [r0]
 	;; Game Timer ;;
 		LDR r0, =game_timer_count
-		MOV r1, #120		;Initialize game timer to 120 (2 minutes of in-game time)
+		MOV r1, #120		; Initialize game timer to 120 (2 minutes of in-game time)
 		STR r1, [r0]
 	;; Enemy Count ;;
 		LDR r0, =enemy_count
-		MOV r1, #3			;Initialize total number of enemies to 3 at game start (and on level up)
+		MOV r1, #3			; Initialize total number of enemies to 3 at game start (and on level up)
 		STR r1, [r0]
 	;; Player Location ;;
 		LDR r0, =player_location
-		LDR r1, =gameboard	;Load the base address of the gameboard 
-		ADD r1, r1, #194	;Add 194 to find the address at the center of the board
-		STR r1, [r0]		;Store this central address at player_location at game start (and on level up)
+		LDR r1, =gameboard	; Load the base address of the gameboard 
+		ADD r1, r1, #194	; Add 194 to find the address at the center of the board
+		STR r1, [r0]		; Store this central address at player_location at game start (and on level up)
 	;; Player Direction ;;
 		LDR r0, =player_direction
-		MOV r1, #0x64		;Set the player direction to 'd'
+		MOV r1, #0x64		; Set the player direction to 'd'
 		STRB r1, [r0]
 	;; Player Character ;;
-		LDR r0, player_character
-		MOV r1, #0x3E		;Set the player character to '>'
+		LDR r0, =player_character
+		MOV r1, #0x3E		; Set the player character to '>'
 		STRB r1, [r0]
 	;; RGB LED setting ;;
 		MOV r0, #0x77		; Before game starts, RGB LED should be set to white
 		BL illuminate_RGB_LED
+	;; On-screen timer ;;
+		LDR r0, =timer_hundreds
+		MOV r1, #0x31
+		STRB r1, [r0]		; Reset the hundreds place for the timer to '1'
+		LDR r0, =timer_tens
+		MOV r1, #0x32
+		STRB r1, [r0]		; Reset the tens place for the timer to '2'
+		LDR r0, =timer_ones
+		MOV r1, #0x30
+		STRB r1, [r0]		; Reset the ones place for the timer to '0'
 
 		MOV r0, #0xC
 		BL output_char
 		LDR r4, =game_start_prompt
-		BL output_string	;Load the base address for the game start, and output to Putty
+		BL output_string	; Load the base address for the game start, and output to Putty
 		
-	;; Reset the contents of the board (somehow?) ;;
+		BL reset_current_board	; Reset the gameboard to its original state
 		
 GAME_START_LOOP
 		LDR r0, =game_start_flag
@@ -182,34 +215,51 @@ interrupt_init
 		LDR r0, =0xFFFFF000
 		LDR r1, [r0, #0x10] 
 		ORR r1, r1, #0x8000 ; External Interrupt 1
-		ORR r1, r1, #0x50	; UART0 Interrupt/Timer0 Interrupt
+		ORR r1, r1, #0x70	; UART0 Interrupt/Timer1 Interrupt/Timer0 Interrupt
 		STR r1, [r0, #0x10]
 
 		; Classify sources as IRQ or FIQ
 		LDR r0, =0xFFFFF000
 		LDR r1, [r0, #0xC]
 		ORR r1, r1, #0x8000 ; External Interrupt 1
-		ORR r1, r1, #0x50	; UART0 Interrupt (Bit 6)/Timer0 Interrupt (Bit 4)
+		ORR r1, r1, #0x70	; UART0 Interrupt (Bit 6)/Timer1 Interrupt (Bit 5)/Timer0 Interrupt (Bit 4)
 		STR r1, [r0, #0xC]
 
 		;Enable Timer Control Register
+	; Timer 0
 		LDR r0, =0xE0004004	; Load address of Timer 0 Control Register (T0TCR)
 		LDRB r1, [r0]		; Reload the new contents of T0TCR
 		MOV r1, #1			; Set 1 to bit 0 to Enable timer
 		STRB r1, [r0]		; Restore the contents back to re-enable timer
+	; Timer 1
+		LDR r0, =0xE0008004	; Load address of Timer	1 Control Resister (T1TCR)
+		LDRB r1, [r0]		; Reload the new contents of T1TCR
+		MOV r1, #1			; Set 1 to bit 0 to Enable timer
+		STRB r1, [r0]		; Restore the contents back to re-enable timer
 
 		; Match Control Register Setup (Timer interrupt setup)
+	; Timer 0
 		LDR r0, =0xE0004014
 		LDR r1, [r0]
 		ORR r1, r1, #0x18	; Generate interrupt when MR1 equals TC (MR1I/Bit 3), Reset TC (MR1R/Bit 4)
 		BIC r1, r1, #0x20	; Clear MR1S/bit 5, (do NOT stop TC when TC equals MR1)
 		STR r1, [r0]
+	; Timer 1	
+		LDR r0, =0xE0008014
+		LDR r1, [r0]
+		ORR r1, r1, #0x18	; Generate interrupt when MR1 equals	TC (MR1I/Bit 3), Reset TC (MR1R, Bit 4)
+		BIC r1, r1, #0x20	; Clear MR1S/bit 5, (do NOT stop TC when TC equals MR1)
 
 		; Match Register Setup
+	; Timer 0
 		LDR r0, =0xE000401C	; Load address of Match Register 1 (MR1)
 		LDR r1, =0x008CA000	; Begin to load contents to trigger interrupt twice per second
 		STR r1, [r0]		; Store the new contents back to MR1 ;;; MR1 = 0x008CA000 = 9.216 million tics, to reset twice per second
-	
+	; Timer 1
+		LDR r0, =0xE000801C	; Load address of Match Register 1 (MR1)
+		LDR r1, =0x01194000	; Begin to load contents to trigger interrupt once per second
+		STR r1, [r0]		; Store the new contents back to MR1
+
 		; UART0 Interrupt Enable
 		LDR r0, =0xE000C004
 		LDR r1, [r0]
@@ -241,17 +291,17 @@ TIMER0			; Check for Timer0 Interrupt
 		LDR r1, [r0]
 		AND r1, r1, #2
 		CMP r1, #2
-		BNE EINT1
+		BNE TIMER1
 
 		LDR r3, =pause_flag		   ;If pause_flag is 1, do not update the board
 		LDR r4, [r3]
 		CMP r4, #1
-		BEQ EINT1
+		BEQ TIMER1
 		
 		LDR r3, =game_start_flag   ;If game_start_flag is 1, do not update the board
 		LDR r4, [r3]
 		CMP r4, #1
-		BEQ EINT1		
+		BEQ TIMER1		
 
 		STMFD sp!, {r0-r12, lr}	; Save registers
 		
@@ -373,7 +423,7 @@ ONE_LIFE
 		B LEVEL_UP_CHECK
 ZERO_LIVES
 		CMP r1, #0
-		BNE LEVEL_UP_CHECK			;If number of lives is 0, output score, game_end_prompt, and set game_start_flag to 1 (to prevent further timer interrupts)
+		BNE GAME_TIME_UP_CHECK		;If number of lives is 0, output score, game_end_prompt, and set game_start_flag to 1 (to prevent further timer interrupts)
 	;;; GAME OVER LOGIC ;;;
 GAME_OVER_CHECK
 		MOV r0, #0xC
@@ -396,12 +446,19 @@ GAME_OVER_CHECK
 		MOV r1, #1					;Set the game_start_flag to 1
 		STR r1, [r0]				;Store new flag in memory
 		B NO_NEW_OUTPUTS
+
+GAME_TIME_UP_CHECK
+		LDR r0, =game_timer_count
+		LDR r1, [r0]
+		CMP r1, #0		   			;Check if game timer has reached 0 seconds, branch to game over check and end the game
+		BEQ GAME_OVER_CHECK
 		
 LEVEL_UP_CHECK
 		LDR r0, =enemy_count		;Load the address of the number of enemies currently on the board
 		LDR r1, [r0]				;Load the current number of enemies on the board
 		CMP r1, #0
 		BNE OUTPUTS
+		BL reset_current_board		;Reset the current gameboard to its original state
 		; If enemy count becomes 0, reset the board (somehow?), reset the enemy_count/generate new enemy_locations, player_location/player_character/player_direction ->		
 		; Increase score for level up, decrease match register time by 0.1 seconds (until = 0.1 seconds)
 
@@ -438,7 +495,68 @@ NO_NEW_OUTPUTS					;Branch here after game_over_check or level_up_check
 		ORR r1, r1, #2		; Clear Interrupt
 		STR r1, [r0]
 		B FIQ_Exit
+
+;;;TIMER INTERRUPT HANDLING;;;
+TIMER1				; Check for Timer1 interrupt
+		LDR r0, =0xE0008000
+		LDR r1, [r0]
+		AND r1, r1, #2
+		CMP r1, #2
+		BNE EINT1
+
+		LDR r3, =pause_flag		   ;If pause_flag is 1, do not update the board
+		LDR r4, [r3]
+		CMP r4, #1
+		BEQ EINT1
 		
+		LDR r3, =game_start_flag   ;If game_start_flag is 1, do not update the board
+		LDR r4, [r3]
+		CMP r4, #1
+		BEQ EINT1
+		
+		STMFD sp!, {r0-r12, lr}	; Save registers
+
+		LDR r0, =game_timer_count
+		LDR r1, [r0]				;Load the value for the game timer
+		SUB r1, r1, #1				;Decrement the value by 1
+		STR r1 [r0]					;Store the game timer value back
+	; Decrement the on-screen timer
+		LDR r0, =timer_ones
+		LDRB r1, [r0]				;Load the digit in the timer_ones place
+		CMP r1, #0x30				;Compare digit to 0
+		BNE DECREMENT_TIMER_ONES
+		MOV r1, #0x39
+		STRB r1, [r0]				;Store 9 to the timer ones position
+		LDR r0, =timer_tens	
+		LDRB r1, [r0]				;Load the digit in the timer_tens place
+		CMP r1, #0x30				;Compare digit to 0
+		BNE DECREMENT_TIMER_TENS
+		MOV r1, #0x39				
+		STRB r1, [r0]				;Store 9 to the timer tens position
+		LDR r0, =timer_hundreds
+		LDRB r1, [r0]				;Load the digit in the timer_hundreds place
+		CMP r1, #0x30
+		BEQ FINISH_TIMER1_UPDATE
+		SUB r1, r1, #1
+		STRB r1, [r0]
+		B FINISH_TIMER1_UPDATE
+
+DECREMENT_TIMER_TENS
+		SUB r1, r1, #1
+		STRB r1, [r0]
+		B FINISH_TIMER1_UPDATE 
+DECREMENT_TIMER_ONES
+		SUB r1, r1, #1				;Decrement the value 
+		STRB r1, [r0] 
+
+FINISH_TIMER1_UPDATE		
+		LDMFD sp!, {r0-r12, lr}			; Restore registers
+
+		LDR r0, =0xE0008000
+		ORR r1, r1, #2		; Clear Interrupt
+		STR r1, [r0]
+		B FIQ_Exit
+				
 ;;;EXTERNAL INTERRUPT 1 HANDLING;;;
 EINT1			; Check for EINT1 interrupt
 		LDR r0, =0xE01FC140
@@ -965,7 +1083,23 @@ ENEMYB_CHANGE_DIRECT_left
 END_ENEMY_MOVEMENT
 		LDMFD sp!, {r0-r12, lr}
 		BX lr
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;RESET BOARD ROUTINE;;;
+reset_current_board		
+	STMFD SP!, {r0-r4, lr}		;Store register lr on stack
+	LDR r3, =gameboard 			;Load the base address for the current gameboard
+	LDR r4, =resetboard			;Load the base address for the cleared/reset gameboard
+OVERWRITE_LOOP		
+		LDRB r0, [r4]			;Load the contents of the byte from memory
+		CMP r0, #0x00			;Compare the byte to the null character
+		BEQ RESET_END			;If so, finish
+		STRB r0, [r3]
+		ADD r3, r3, #1			;Move to the next byte memory location on the gameboard
+		ADD r4, r4, #1			;Move to the next byte memory location on the resetboard
+		B OVERWRITE_LOOP			;Repeat the loop if null character is not found
+RESET_END
+	LDMFD sp!, {r0-r4, lr}
+	BX lr
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;PIN SETUP;;;
 pin_connect_block_setup
