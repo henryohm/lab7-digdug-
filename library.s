@@ -21,7 +21,7 @@ uart_init
 			MOV r1, #131
 			STR r1, [r0]
 			LDR r0, =0xE000C000
-			MOV r1, #1
+			MOV r1, #10
 			STR r1, [r0]
 			LDR r0, =0xE000C004
 			MOV r1, #0
