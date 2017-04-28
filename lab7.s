@@ -16,7 +16,17 @@
 
 
 	ALIGN
-
+digit_SET
+		DCD 0x00000300  ; 1 
+		DCD 0x00002D80	; 2
+		DCD 0x00002780	; 3
+		DCD 0x00003300	; 4
+		DCD 0x00003680	; 5
+		DCD 0x00003E80	; 6
+		DCD 0x00001380	; 7
+		DCD 0x00003F80	; 8
+		DCD 0x00003780	; 9
+	ALIGN
 score_prompt = "SCORE: ",0	;Find location in memory of value, and adjust accordingly
 score_thousands = "0",0
 score_hundreds = "0",0
@@ -106,6 +116,8 @@ game_timer_count = 120			; Total time (2 minutes) for the game to run, reset to 
 	ALIGN
 player_lives = 0x00000000		; Number of lives, initialize to 4 when the game starts
 	ALIGN
+current_display_level = 0x00000000
+	ALIGN
 player_character = 0x3E		; Initially ">"	corresponding to right
 player_direction = 0x64		; Initially "d" corresponding to right
 enemy1_direction = 0x61		; Initially "a" (left)
@@ -187,9 +199,14 @@ GAME_START_LOOP
 		CMP r1, #0			;Compare the game_start_flag to 1, preventing enemies from being generated on the board (from the random number created by 'g')
 		BNE GAME_START_LOOP
 		
+	;; Current Display Digit ;;
+		LDR r0, =current_display_level
+		LDR r1, =digit_SET
+		STR r1, [r0]				;Display '1' on the 7 segment display at the start of the game
+		MOV r0, r1
+		BL display_digit_on_7_seg
 		; Initialize random enemy locations on the gameboard (using random_number)
 		; Clear out blank space on left and right of enemy (Unless area is 'Z', the wall)
-		; Start the second timer to keep track to 2 min game time
 		
 		; Use infinite loop to wait for interrupts to occur, until user exits the game
 INFINITE_LOOP
@@ -247,7 +264,7 @@ interrupt_init
 	; Timer 1	
 		LDR r0, =0xE0008014
 		LDR r1, [r0]
-		ORR r1, r1, #0x18	; Generate interrupt when MR1 equals	TC (MR1I/Bit 3), Reset TC (MR1R, Bit 4)
+		ORR r1, r1, #0x18	; Generate interrupt when MR1 equals TC (MR1I/Bit 3), Reset TC (MR1R, Bit 4)
 		BIC r1, r1, #0x20	; Clear MR1S/bit 5, (do NOT stop TC when TC equals MR1)
 
 		; Match Register Setup
@@ -257,7 +274,7 @@ interrupt_init
 		STR r1, [r0]		; Store the new contents back to MR1 ;;; MR1 = 0x008CA000 = 9.216 million tics, to reset twice per second
 	; Timer 1
 		LDR r0, =0xE000801C	; Load address of Match Register 1 (MR1)
-		LDR r1, =0x01194000	; Begin to load contents to trigger interrupt once per second
+		LDR r1, =0x01195000	; Begin to load contents to trigger interrupt once per second
 		STR r1, [r0]		; Store the new contents back to MR1
 
 		; UART0 Interrupt Enable
@@ -475,9 +492,22 @@ LEVEL_UP_CHECK
 		CMP r1, #0
 		BNE OUTPUTS
 		BL reset_current_board		;Reset the current gameboard to its original state
-		; If enemy count becomes 0, reset the board (somehow?), reset the enemy_count/generate new enemy_locations, player_location/player_character/player_direction ->		
 	; Increment level count on 7-seg display
-		
+		LDR r0, =current_display_level
+		LDR r1, [r0]				;Load the value representing the current level the player is on
+		LDR r2, =digit_SET
+		ADD r2, r2, #36				;Load the value for digit '9' into r2
+		CMP r1, r2
+		BNE UPDATE_LEVEL
+		LDR r2, =digit_SET
+		STR r2, [r0]				;Reset the 7-segment display to show '1'
+		MOV r0, r2
+		BL display_digit_on_7_seg
+UPDATE_LEVEL
+		ADD r1, r1, #4
+		STR r1, [r0]				;Store the new updated value to current_display_level
+		MOV r0, r1
+		BL display_digit_on_7_seg	;Update the 7-segment display by 1
 	; Reset enemy count
 		LDR r0, =enemy_count
 		MOV r1, #3			; Initialize total number of enemies to 3 on level up
@@ -568,7 +598,7 @@ TIMER1				; Check for Timer1 interrupt
 		LDR r0, =game_timer_count
 		LDR r1, [r0]				;Load the value for the game timer
 		SUB r1, r1, #1				;Decrement the value by 1
-		STR r1, [r0]					;Store the game timer value back
+		STR r1, [r0]				;Store the game timer value back
 	; Decrement the on-screen timer
 		LDR r0, =timer_ones
 		LDRB r1, [r0]				;Load the digit in the timer_ones place
@@ -877,6 +907,7 @@ update_score
 		BNE TENS_INCREMENT
 		MOV r1, #0x30			;Reset the tens place of the score to 0
 		STRB r1, [r0]			;Store ASCII '0' back to score_tens
+		MOV r0, #2
 		B SCORE_Large
 TENS_INCREMENT
 		ADD r1, r1, #1			;Increment the ASCII value by 1

@@ -226,8 +226,6 @@ LED5
 	STR r3, [r1] 		;store the correct bit to turn on led	
 	B DONE
 	
-
-
 LED6
 	CMP r0, #0x06		;compare r0 to 1
 	BNE LED7			;Branch to nexr check
@@ -280,7 +278,7 @@ LED12
 	
 LED13
 	CMP r0, #0x0d		;compare r0 to 1
-	BNE LED4			;Branch to nexr check
+	BNE LED14			;Branch to nexr check
 	MOV r3, #0x000B0000 ;load pinsel into r1 
 	STR r3, [r1] 		;store the correct bit to turn on led	 
 	B DONE
