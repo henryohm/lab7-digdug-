@@ -612,7 +612,7 @@ DOWN_CHANGE_DIRECT
 ;;;;;;UPDATE TO MOVE RIGHT;;;;;;
 RIGHT_CHECK
 		CMP r0, #0x64			;Check if the input direction is 'd', right
-		BNE GAME_START_CHECK	;If not, branch to next check
+		BNE BULLET	;If not, branch to next check
 	; Compare the player's current direction to the new input direction
 		LDR r1, =player_direction	;Load the player's previous direction
 		LDRB r2, [r1]
@@ -648,6 +648,75 @@ RIGHT_CHANGE_DIRECT
 		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
 		B FIQ_Exit
+		
+		
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;FIRE BULLET;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;		
+BULLET
+	CMP r0, 0x20
+	BNE GAME_START_CHECK		
+	LDR r1, player_character        ;Load the payer char to decide 
+	LDRB r2, [r1]					;LOad the player character, for directions
+	
+BULLET_RIGHT_CHECK 	
+	CMP r2, 0x3E 					;Compare r2, to '>'
+	LDR r0, =player_location		;load player current locations address  
+	ADD r0, r0, #1					;check player locationds address one position away.
+	LDR r1, [r0]					;load content of r0
+	B SPACE_CHECK_RIGHT
+SPACE_LOOP 
+	ADD r0, r0, #1					;check player locationds address one position away.
+	LDR r1, [r0]
+	SPACE_CHECK_RIGHT
+	CMP r1, 0x20					;Compare content of player loation +1 to "space"
+	BNE BIG_CHECK_RIGHT 			;BRANCH TO NEXT BRANCH
+	MOV r2 0x3D						;Move '=' to r2
+	STRB r2, [r1]					;Store bit to player location
+	B SPCAE_LOOP
+	
+	BIG_CHECK_RIGHT
+	CMP r1, 0x20					;Compare content of player loation +1 to "space"
+	BNE SMALL_CHECK_RIGHT 			;BRANCH TO NEXT BRANCH
+	MOV r2 0x3D						;Move '=' to r2
+	STRB r2, [r1]					;Store bit to player location
+	B FIQ_Exit
+
+
+
+	SMALL_CHECK_RIGHT
+	CMP r1, 0x20					;Compare content of player loation +1 to "space"
+	BNE DIRT_CHECK_RIGHT 			;BRANCH TO NEXT BRANCH
+	MOV r2 0x20						;Move '=' to r2
+	STRB r2, [r1]					;Store bit to player location
+	B FIQ_Exit						
+	
+	
+	
+	DIRT_CHECK_RIGHT 
+	CMP r1, 0x23					;Compare r1 to dirt "#"
+	BNE WALL_CHECK_RIGHT		
+	B FIQ_Exit
+	
+	WALL_CHECK_RIGHT	
+	CMP r1, 0x5A					;Compare r1 to WALL "Z"		
+	B FIQ_Exit
+	
+BULLET
+
+
+
+
+BULLET_RIGHT_CHECK
+
+
+
+BULLET_LEFT_CHECK
+
+
+
+BULLET_UP_CHECK
+
+
+BULLET_DOWN_CHECK
 
 GAME_START_CHECK
 		CMP r0, #0x67			;Check if input is 'g', allowing game to start from opening screen
@@ -985,3 +1054,4 @@ pin_connect_block_setup
 		BX lr
 
 	END
+0
