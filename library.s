@@ -10,9 +10,375 @@
 	EXPORT output_string
 	EXPORT uart_init
 	EXPORT div_and_mod
+	EXPORT move_enemy
+	EXPORT update_score
+	EXPORT interrupt_init
+		
+	IMPORT score_tens
+	IMPORT score_hundreds
+	IMPORT score_thousands
+	IMPORT enemy1_location
+	IMPORT enemy1_direction
+	IMPORT enemy2_location
+	IMPORT enemy2_direction
+	IMPORT enemyB_location
+	IMPORT enemyB_direction
 
 ;;;;;;LIBRARY FILE (FOR COMMONLY USED ROUTINES);;;;;;
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;INTERRUPT INITIALIZATION;;;
+interrupt_init     
+		STMFD SP!, {r0-r1, lr}   ; Save registers 
+
+		; Push button setup		 
+		LDR r0, =0xE002C000
+		LDR r1, [r0]
+		ORR r1, r1, #0x20000000
+		BIC r1, r1, #0x10000000
+		STR r1, [r0]  ; PINSEL0 bits 29:28 = 10
+
+		; Enable Interrupts
+		LDR r0, =0xFFFFF000
+		LDR r1, [r0, #0x10] 
+		ORR r1, r1, #0x8000 ; External Interrupt 1
+		ORR r1, r1, #0x70	; UART0 Interrupt/Timer1 Interrupt/Timer0 Interrupt
+		STR r1, [r0, #0x10]
+
+		; Classify sources as IRQ or FIQ
+		LDR r0, =0xFFFFF000
+		LDR r1, [r0, #0xC]
+		ORR r1, r1, #0x8000 ; External Interrupt 1
+		ORR r1, r1, #0x70	; UART0 Interrupt (Bit 6)/Timer1 Interrupt (Bit 5)/Timer0 Interrupt (Bit 4)
+		STR r1, [r0, #0xC]
+
+		;Enable Timer Control Register
+	; Timer 0
+		LDR r0, =0xE0004004	; Load address of Timer 0 Control Register (T0TCR)
+		LDRB r1, [r0]		; Reload the new contents of T0TCR
+		MOV r1, #1			; Set 1 to bit 0 to Enable timer
+		STRB r1, [r0]		; Restore the contents back to re-enable timer
+	; Timer 1
+		LDR r0, =0xE0008004	; Load address of Timer	1 Control Resister (T1TCR)
+		LDRB r1, [r0]		; Reload the new contents of T1TCR
+		MOV r1, #1			; Set 1 to bit 0 to Enable timer
+		STRB r1, [r0]		; Restore the contents back to re-enable timer
+
+		; Match Control Register Setup (Timer interrupt setup)
+	; Timer 0
+		LDR r0, =0xE0004014
+		LDR r1, [r0]
+		ORR r1, r1, #0x18	; Generate interrupt when MR1 equals TC (MR1I/Bit 3), Reset TC (MR1R/Bit 4)
+		BIC r1, r1, #0x20	; Clear MR1S/bit 5, (do NOT stop TC when TC equals MR1)
+		STR r1, [r0]
+	; Timer 1	
+		LDR r0, =0xE0008014
+		LDR r1, [r0]
+		ORR r1, r1, #0x18	; Generate interrupt when MR1 equals TC (MR1I/Bit 3), Reset TC (MR1R, Bit 4)
+		BIC r1, r1, #0x20	; Clear MR1S/bit 5, (do NOT stop TC when TC equals MR1)
+
+		; Match Register Setup
+	; Timer 0
+		LDR r0, =0xE000401C	; Load address of Match Register 1 (MR1)
+		LDR r1, =0x008CA000	; Begin to load contents to trigger interrupt twice per second
+		STR r1, [r0]		; Store the new contents back to MR1 ;;; MR1 = 0x008CA000 = 9.216 million tics, to reset twice per second
+	; Timer 1
+		LDR r0, =0xE000801C	; Load address of Match Register 1 (MR1)
+		LDR r1, =0x01195000	; Begin to load contents to trigger interrupt once per second
+		STR r1, [r0]		; Store the new contents back to MR1
+
+		; UART0 Interrupt Enable
+		LDR r0, =0xE000C004
+		LDR r1, [r0]
+		ORR r1, r1, #1		; Enable RDA
+		STR r1, [r0]
+		
+		; External Interrupt 1 setup for edge sensitive
+		LDR r0, =0xE01FC148
+		LDR r1, [r0]
+		ORR r1, r1, #2  	; EINT1 = Edge Sensitive
+		STR r1, [r0]
+
+		; Enable FIQ's, Disable IRQ's
+		MRS r0, CPSR
+		BIC r0, r0, #0x40
+		ORR r0, r0, #0x80
+		MSR CPSR_c, r0
+
+		LDMFD SP!, {r0-r1, lr} ; Restore registers
+		BX lr             	   ; Return
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;UPDATING SCORE;;;
+update_score
+		STMFD sp!, {r0-r12, lr}	; Store registers on stack
+	
+	;;; UPDATE SCORE FOR DIRT ;;;
+		CMP r0, #0				 ; If particular register value is 0 when entering routine,
+		BNE SCORE_Small			 
+	; Increment score by 10 if player passes through dirt
+		LDR r0, =score_tens		;Load the address for the tens place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x39			;Compare this value to 9
+		BNE TENS_INCREMENT
+		MOV r1, #0x30			;Reset the tens place of the score to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_tens
+		MOV r0, #2
+		B SCORE_Large
+TENS_INCREMENT
+		ADD r1, r1, #1			;Increment the ASCII value by 1
+		STRB r1, [r0]			;Store the value back into score_tens
+		B FINISHSCORE
+
+	;;; UPDATE SCORE FOR SMALL ENEMY ;;;
+SCORE_Small
+		CMP r0, #1				 ; If particular register value is 1 when entering routine,
+		BNE SCORE_Large 
+	; Increment score by 50 if player defeats small enemy
+		LDR r0, =score_tens		;Load the address for the tens place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x35			;Compare this value to 5
+		BLT INCREMENT_BY_5		;If < '5', simply increment by 5 and exit routine
+		CMP r1, #0x35			;If = '5', reset to 0, and increment hundreds place by 1 
+		BNE COMPARE_TO_6
+		MOV r1, #0x30			;Reset tens place to 0
+		STRB r1, [r0]			;Store that reset value back to score_tens
+		MOV r0, #2				
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_6
+		CMP r1, #0x36			;If = '6', reset to 1, and increment hundreds place by 1
+		BNE COMPARE_TO_7		
+		MOV r1, #0x31			;Reset tens place to 1
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_7
+		CMP r1, #0x37			;If = '7', reset to 2, and increment hundreds place by 1
+		BNE COMPARE_TO_8
+		MOV r1, #0x32			;Reset tens place to 2
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_8
+		CMP r1, #0x38			;If = '8', reset to 3, and increment hundreds place by 1
+		BNE COMPARE_TO_9
+		MOV r1, #0x33			;Reset tens place to 3
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large			;Increment the hundreds place by 1
+COMPARE_TO_9
+		CMP r1, #0x39			;If = '9', reset to 4, and increment hundreds place by 1
+		BNE FINISHSCORE
+		MOV r1, #0x34			;Reset tens place to 4
+		STRB r1, [r0]			;Store that new value back to score_tens
+		MOV r0, #2
+		B SCORE_Large
+INCREMENT_BY_5
+		ADD r1, r1, #5			;Increase the ASCII character representing the 10's place by 5
+		STRB r1, [r0]			;Store that new byte back to score_tens
+		B FINISHSCORE
+		
+	;;; UPDATE SCORE FOR LARGE ENEMY ;;;
+SCORE_Large
+		CMP r0, #2				 ; If particular register value is 2 when entering routine,
+		BNE SCORE_Level
+	; Increment score by 100 if player defeats large enemy
+		LDR r0, =score_hundreds	;Load the address for the hundreds place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x39			;Compare this value to 9
+		BNE HUNDREDS_INCREMENT
+		MOV r1, #0x30			;Reset the hundreds place of the score back to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
+		B SCORE_Thousands		;Increment the thousands place
+HUNDREDS_INCREMENT
+		LDR r0, =score_hundreds
+		LDRB r1, [r0]
+		ADD r1, r1, #1			;Increment the ASCII value by 1
+		STRB r1, [r0]			;Store the value back into score_hundreds
+		B FINISHSCORE
+
+	;;; UPDATE SCORE FOR LEVEL UP ;;;
+SCORE_Level
+		CMP r0, #3				 ; If particular register value is 3 when entering routine,
+		BNE FINISHSCORE			 ; If particular register value is otherwise, exit routine
+	; Increment score by 200 if player passes level
+	   	LDR r0, =score_hundreds	;Load the address for the hundreds place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x38			;Compare this value to 8
+		BLT TWO_HUNDRED_INCREMENT	;If less than, simply increment value by 2
+		CMP r1, #0x38			
+		BNE COMPARE_9_HUNDRED
+		MOV r1, #0x30			;Reset the hundreds place of the score back to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_hundreds
+		B SCORE_Thousands		;Increment the thousands place
+COMPARE_9_HUNDRED
+		CMP r1, #0x39			;Compare this value to 9
+		BNE FINISHSCORE
+		MOV r1, #0x31			;Reset the hundreds place back to 1
+		STRB r1, [r0]			;Store that new value back to scre_hundreds
+		B SCORE_Thousands
+TWO_HUNDRED_INCREMENT
+		ADD r1, r1, #2			;Increment the ASCII value by 2
+		STRB r1, [r0]			;Store the value back into score_hundreds
+		B FINISHSCORE
+	;;; INCREMENT THOUSANDS PLACE (IF NECESSARY)
+SCORE_Thousands
+	; Check thousands place for incrementation if necessary
+	    LDR r0, =score_thousands	;Load the address for the thousands place into r0
+		LDRB r1, [r0]			;Load the ASCII value into r1
+		CMP r1, #0x39			;Compare this value to 9
+		BNE THOUSANDS_INCREMENT
+		MOV r1, #0x30			;Reset the thousands place of the score to 0
+		STRB r1, [r0]			;Store ASCII '0' back to score_thousands
+		B FINISHSCORE
+THOUSANDS_INCREMENT
+		ADD r1, r1, #1			;Increment the ASCII value by 1
+		STRB r1, [r0]			;Store the value back into score_thousands
+
+FINISHSCORE
+		
+	LDMFD sp!, {r0-r12, lr} ; Load registers from stack
+	BX lr
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;ENEMY MOVEMENT LOGIC;;;
+move_enemy
+		STMFD sp!, {r0-r12, lr}
+	
+;;; MOVEMENT LOGIC FOR SMALL ENEMY 1 ;;;
+		CMP r0, #0				;Compare to flag value, if 0, grab enemy 1 location and move them
+		BNE SMALL_ENEMY_TWO
+		LDR r0, =enemy1_location
+		LDR r1, [r0]			;Load the location for the first enemy and compare to 0 (set value to 0 if enemy is destroyed)
+		CMP r1, #0
+		BEQ END_ENEMY_MOVEMENT	;If value for location is 0, the enemy was destroyed by the player (Don't move)
+		LDR r2, =enemy1_direction
+		LDRB r3, [r2]			;Load the byte representing the current direction of movement
+		CMP r3, #0x64
+		BEQ ENEMY1_RIGHT		;Compare direction of movement to 'd' (if not, move left)
+		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY1_CHANGE_DIRECT_right
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy1_location
+		B END_ENEMY_MOVEMENT
+ENEMY1_RIGHT
+		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY1_CHANGE_DIRECT_left
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy1_location
+		B END_ENEMY_MOVEMENT
+ENEMY1_CHANGE_DIRECT_right
+		LDR r0, =enemy1_direction
+		MOV r1, #0x64			;Change byte direction to 'd' for enemy 1
+		STRB r1, [r0]			;Store that byte back to enemy1_direction
+		B END_ENEMY_MOVEMENT
+ENEMY1_CHANGE_DIRECT_left
+		LDR r0, =enemy1_direction
+		MOV r1, #0x61			;Change byte direction to 'a' for enemy 1
+		STRB r1, [r0]
+		B END_ENEMY_MOVEMENT
+
+;;; MOVEMENT LOGIC FOR SMALL ENEMY 2 ;;;
+SMALL_ENEMY_TWO
+		CMP r0, #1				;Compare flag value, if 1, grab enemy 2 location and move them
+		BNE LARGE_ENEMY_MOVEMENT
+		LDR r0, =enemy2_location
+		LDR r1, [r0]			;Load the locaiton for the first enemy and compare to 0 (set value to 0 if enemy was destoryed)
+		CMP r1, #0
+		BEQ END_ENEMY_MOVEMENT	;If value for location is 0, the enemy was destroyed by the player, (Don't move)
+		LDR r2, =enemy2_direction
+		LDRB r3, [r2]			;Load the byte representing the current direction of movement
+		CMP r3, #0x64
+		BEQ ENEMY2_RIGHT		;Compare direction of movement to 'd' (if not, move left)
+		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY2_CHANGE_DIRECT_right
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy2_location
+		B END_ENEMY_MOVEMENT
+ENEMY2_RIGHT
+		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY2_CHANGE_DIRECT_left
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x78
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemy1_location
+		B END_ENEMY_MOVEMENT
+ENEMY2_CHANGE_DIRECT_right
+		LDR r0, =enemy2_direction
+		MOV r1, #0x64			;Change byte direction to 'd' for enemy 2
+		STRB r1, [r0]			;Store that byte back to enemy1_direction
+		B END_ENEMY_MOVEMENT
+ENEMY2_CHANGE_DIRECT_left
+		LDR r0, =enemy2_direction
+		MOV r1, #0x61			;Change byte direction to 'a' for enemy 2
+		STRB r1, [r0]
+		B END_ENEMY_MOVEMENT
+		
+;;; MOVEMENT LOGIC FOR LARGE ENEMY ;;;
+LARGE_ENEMY_MOVEMENT
+		CMP r0, #2				;Compare flag value, if 2, grab large enemy location and move them
+		BNE END_ENEMY_MOVEMENT
+		LDR r0, =enemyB_location
+		LDR r1, [r0]			;Load the location for the first enemy and compare to 0 (set value to 0 if enemy was destroyed)
+		CMP r1, #0
+		BEQ END_ENEMY_MOVEMENT	;If value for location is 0, the enemy was destroyed by the player, (Don't move)
+		LDR r2, =enemyB_direction
+		LDRB r3, [r2]			;Load the byte representing the current direction of movement
+		CMP r3, #0x64
+		BEQ ENEMYB_RIGHT		;Compare direction of movement to 'd' (if not, move left)
+		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMYB_CHANGE_DIRECT_right
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x42
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemyB_location
+		B END_ENEMY_MOVEMENT
+ENEMYB_RIGHT
+		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
+		LDR r3, [r2]			;Load the contents of that address
+		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMYB_CHANGE_DIRECT_left
+		MOV r3, #0x20			;Store ' ' at the old enemy location
+		STRB r3, [r1]			
+		MOV r3, #0x42
+		STRB r3, [r2]			;Store 'x' at new enemy location
+		STR r2, [r0]			;Store the new enemy location back to enemyB_location
+		B END_ENEMY_MOVEMENT
+ENEMYB_CHANGE_DIRECT_right
+		LDR r0, =enemy1_direction
+		MOV r1, #0x64			;Change byte direction to 'd' for enemy B
+		STRB r1, [r0]			;Store that byte back to enemy1_direction
+		B END_ENEMY_MOVEMENT
+ENEMYB_CHANGE_DIRECT_left
+		LDR r0, =enemyB_direction
+		MOV r1, #0x61			;Change byte direction to 'a' for enemy B
+		STRB r1, [r0]
+		B END_ENEMY_MOVEMENT
+
+END_ENEMY_MOVEMENT
+		LDMFD sp!, {r0-r12, lr}
+		BX lr
 ;;;;;;INITIALIZE THE UART FOR THE USER;;;;;;
 uart_init
 	STMFD SP!,{lr}
@@ -226,6 +592,8 @@ LED5
 	STR r3, [r1] 		;store the correct bit to turn on led	
 	B DONE
 	
+
+
 LED6
 	CMP r0, #0x06		;compare r0 to 1
 	BNE LED7			;Branch to nexr check
@@ -278,7 +646,7 @@ LED12
 	
 LED13
 	CMP r0, #0x0d		;compare r0 to 1
-	BNE LED14			;Branch to nexr check
+	BNE LED4			;Branch to nexr check
 	MOV r3, #0x000B0000 ;load pinsel into r1 
 	STR r3, [r1] 		;store the correct bit to turn on led	 
 	B DONE
