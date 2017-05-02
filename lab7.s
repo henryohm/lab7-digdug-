@@ -222,44 +222,50 @@ GAME_START_LOOP
 		
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;enemy x_1;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  		LDR r0, =random_number
- 		ADD r0, r0, #1				;change memeory address to increased
+ 		ADD r0, r0, #1				;change memory address to increased
 		LDRB r1, [r0] 				;load the bit at memory address
 		MOV r0, r1 					;move r1 into r0, set up divisor
 		MOV r1, #15 				;set up divident
 		BL div_and_mod 				;branch to divison routine
+		MOV r3, r0					;Save quotient to temp register
 		MOV r2, r1 					;move r1 into r2
-		LSR r1, #4 					;multiplication	(r1 x 16)
+		LSL r1, #4 					;multiplication	(r1 x 16)
 		MOV r0, r2 					;multiplication
-		LSR r0, #3 					;multiplication  (r0 x 8)
+		LSL r0, #3 					;multiplication  (r0 x 8)
 		SUB r0, r0, r2				;sub r0 from (r0 x 8) set up for rn*23
 		ADD r4, r0, r1			    ;Hold 23 x (rn/15) in r4
 
-		MOV r0, r2 					;move random number to r0
-		MOV r1, #15 				;move 15 into r1 for divsion
+		MOV r0, r3 					;move random number to r0
+		MOV r1, #19 				;move 19 into r1 for divsion
 		BL div_and_mod
 		ADD r1, r1, r4 				;add (rn/19) + (23(rn15))
 		LDR r2, =gameboard 			;Load game baord base address
+		ADD r2, r2, #24				;Ensure no enemy spawns on the first row
 		ADD r1, r1, r2
 		LDR r2, =enemy1_location 	;load enemy base locations
 		STR r1, [r2] 				;store enemy x_1 location
+		MOV r2, #0x78
+		STRB r2, [r1]
 ENEMY1_SPACE_CHECK_PLUS
 		LDR r0, =enemy1_location	;load address of enemy
-		ADD r1, r0, #1				;check enemy address one location away 
-		LDR r2, [r1]				;load the content of that address 
-		CMP r2, #0x5A				;compare r2 to '#'
-		BNE DIRT1_CHANGE_PLUS		;If not, branch to changing ' ' to '#'
+		LDR r1, [r0]
+		ADD r1, r1, #1				;check enemy address one location away 
+		LDRB r2, [r1]
+		CMP r2, #0x5A				;compare r2 to 'Z'
+		BEQ ENEMY1_SPACE_CHECK_MINUS	;If not, branch to changing ' ' to '#'
 DIRT1_CHANGE_PLUS		 	
 		MOV r2, #0x20				;move space into r2 
-		STR r2, [r1]				;store space 1 postion away from enemy location 
-		B ENEMY1_SPACE_CHECK_MINUS
-ENEMY1_SPACE_CHECK_MINUS 
+		STRB r2, [r1]				;store space 1 postion away from enemy location   =
+ENEMY1_SPACE_CHECK_MINUS
+		LDR r0, =enemy1_location
+		LDR r1, [r0] 
 		SUB r1, r1, #1				;check postion of enemy one postion behind 
-		LDR r2, [r1]				;load the content of that address 
-		CMP r2, #0x5A				;compare r2 to '#'
-		BNE DIRT1_CHANGE_MINUS		;If not, branch to changing ' ' to '#'
+		LDRB r2, [r1]				;load the content of that address 
+		CMP r2, #0x5A				;compare r2 to 'Z'
+		BEQ INFINITE_LOOP			;If not, branch to changing ' ' to '#'
 DIRT1_CHANGE_MINUS		 	
 		MOV r2, #0x20				;move space into r2 
-		STR r2, [r1]				;store space 1 postion away from enemy location 
+		STRB r2, [r1]				;store space 1 postion away from enemy location 
 		
 		; Use infinite loop to wait for interrupts to occur, until user exits the game
 INFINITE_LOOP
@@ -321,7 +327,7 @@ SMALL_UP_CHECK
 		LDR r0, =player_location	;Load address for player's location
 		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
 		SUB r2, r1, #23				;Find the location in memory 23 places back (1 y-coordinate up)
-		LDR r3, [r2]				;Load the contents from that address
+		LDRB r3, [r2]				;Load the contents from that address
 		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
 		BNE LARGE_UP_CHECK
 		LDR r0, =player_lives
@@ -341,7 +347,7 @@ SMALL_LEFT_CHECK
 		LDR r0, =player_location	;Load address for player's location
 		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
 		SUB r2, r1, #1				;Find the location in memory 1 place back (1 x-coordinate left)
-		LDR r3, [r2]				;Load the contents from that address
+		LDRB r3, [r2]				;Load the contents from that address
 		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
 		BNE LARGE_LEFT_CHECK
 		LDR r0, =player_lives
@@ -361,7 +367,7 @@ SMALL_DOWN_CHECK
 		LDR r0, =player_location	;Load the address for player's location
 		LDR r1, [r0]				;Load the contents representing the player location on the gameboard string
 		ADD r2, r1, #23				;Find the location in memory 23 places down (1 y-coordinate down)
-		LDR r3, [r2]				;Load the contents from that address
+		LDRB r3, [r2]				;Load the contents from that address
 		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
 		BNE LARGE_DOWN_CHECK
 		LDR r0, =player_lives
@@ -381,7 +387,7 @@ SMALL_RIGHT_CHECK
 		LDR r0, =player_location	;Load the address for player's location
 		LDR r1, [r0]				;Load the contents represeting the player location on the gameboard string
 		ADD r2, r1, #1				;Find the location in memory 1 place forward (1 x-coordinate right)
-		LDR r3, [r2]				;Load the contents from that address
+		LDRB r3, [r2]				;Load the contents from that address
 		CMP r3, #0x78				;Compare those contents with 'x' (small enemy)
 		BNE LARGE_RIGHT_CHECK
 		LDR r0, =player_lives
@@ -1181,14 +1187,7 @@ RESET_END
 pin_connect_block_setup
 		STMFD sp!, {r0, r1, lr}
 		LDR r0, =0xE002C000  ; PINSEL0
-		MOV r1, #0x26
-		BIC r1, r1, #0xD9
-		LSL r1, #8
-		ADD r1, r1, #0x3F
-		BIC r1, r1, #0xC0
-		LSL r1, #8
-		ADD r1, r1, #0x85
-		BIC r1, r1, #0x7A
+		LDR r1, =0x00263F85
 		STR r1, [r0]
 		
 		LDMFD sp!, {r0, r1, lr}

@@ -257,7 +257,7 @@ move_enemy
 		CMP r3, #0x64
 		BEQ ENEMY1_RIGHT		;Compare direction of movement to 'd' (if not, move left)
 		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
-		LDR r3, [r2]			;Load the contents of that address
+		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
@@ -268,7 +268,7 @@ move_enemy
 		B END_ENEMY_MOVEMENT
 ENEMY1_RIGHT
 		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
-		LDR r3, [r2]			;Load the contents of that address
+		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
@@ -301,7 +301,7 @@ SMALL_ENEMY_TWO
 		CMP r3, #0x64
 		BEQ ENEMY2_RIGHT		;Compare direction of movement to 'd' (if not, move left)
 		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
-		LDR r3, [r2]			;Load the contents of that address
+		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
@@ -312,7 +312,7 @@ SMALL_ENEMY_TWO
 		B END_ENEMY_MOVEMENT
 ENEMY2_RIGHT
 		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
-		LDR r3, [r2]			;Load the contents of that address
+		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
@@ -345,7 +345,7 @@ LARGE_ENEMY_MOVEMENT
 		CMP r3, #0x64
 		BEQ ENEMYB_RIGHT		;Compare direction of movement to 'd' (if not, move left)
 		SUB r2, r1, #1			;Find address of location 1 x-coordinate to left
-		LDR r3, [r2]			;Load the contents of that address
+		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
@@ -356,7 +356,7 @@ LARGE_ENEMY_MOVEMENT
 		B END_ENEMY_MOVEMENT
 ENEMYB_RIGHT
 		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
-		LDR r3, [r2]			;Load the contents of that address
+		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
@@ -559,7 +559,6 @@ LED1
 	CMP r0, #0x01		;compare r0 to 1
 	BNE LED2			;Branch to nexr check
 	MOV r3, #0x00080000
-	ORR r2, r2 ,r3
 	STR r3, [r2] 		;store the correct bit to turn on led	
 	B DONE
 	
@@ -646,7 +645,7 @@ LED12
 	
 LED13
 	CMP r0, #0x0d		;compare r0 to 1
-	BNE LED4			;Branch to nexr check
+	BNE LED14			;Branch to nexr check
 	MOV r3, #0x000B0000 ;load pinsel into r1 
 	STR r3, [r1] 		;store the correct bit to turn on led	 
 	B DONE
