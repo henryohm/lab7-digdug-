@@ -221,6 +221,7 @@ GAME_START_LOOP
 		; Clear out blank space on left and right of enemy (Unless area is 'Z', the wall)
 		
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;enemy x_1;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ENEMY1_SPAWN
  		LDR r0, =random_number
  		ADD r0, r0, #1				;change memory address to increased
 		LDRB r1, [r0] 				;load the bit at memory address
@@ -262,12 +263,110 @@ ENEMY1_SPACE_CHECK_MINUS
 		SUB r1, r1, #1				;check postion of enemy one postion behind 
 		LDRB r2, [r1]				;load the content of that address 
 		CMP r2, #0x5A				;compare r2 to 'Z'
-		BEQ INFINITE_LOOP			;If not, branch to changing ' ' to '#'
+		BEQ ENEMY2_SPAWN			;If not, branch to changing ' ' to '#'
 DIRT1_CHANGE_MINUS		 	
 		MOV r2, #0x20				;move space into r2 
 		STRB r2, [r1]				;store space 1 postion away from enemy location 
 		
 		; Use infinite loop to wait for interrupts to occur, until user exits the game
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;enemy x_2;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ENEMY2_SPAWN
+ 		LDR r0, =random_number
+ 		ADD r0, r0, #2				;change memory address to increased
+		LDRB r1, [r0] 				;load the bit at memory address
+		MOV r0, r1 					;move r1 into r0, set up divisor
+		MOV r1, #15 				;set up divident
+		BL div_and_mod 				;branch to divison routine
+		MOV r3, r0					;Save quotient to temp register
+		MOV r2, r1 					;move r1 into r2
+		LSL r1, #4 					;multiplication	(r1 x 16)
+		MOV r0, r2 					;multiplication
+		LSL r0, #3 					;multiplication  (r0 x 8)
+		SUB r0, r0, r2				;sub r0 from (r0 x 8) set up for rn*23
+		ADD r4, r0, r1			    ;Hold 23 x (rn/15) in r4
+
+		MOV r0, r3 					;move random number to r0
+		MOV r1, #19 				;move 19 into r1 for divsion
+		BL div_and_mod
+		ADD r1, r1, r4 				;add (rn/19) + (23(rn15))
+		LDR r2, =gameboard 			;Load game baord base address
+		ADD r2, r2, #24				;Ensure no enemy spawns on the first row
+		ADD r1, r1, r2
+		LDR r2, =enemy2_location 	;load enemy base locations
+		STR r1, [r2] 				;store enemy x_1 location
+		MOV r2, #0x78
+		STRB r2, [r1]
+ENEMY2_SPACE_CHECK_PLUS
+		LDR r0, =enemy2_location	;load address of enemy
+		LDR r1, [r0]
+		ADD r1, r1, #1				;check enemy address one location away 
+		LDRB r2, [r1]
+		CMP r2, #0x5A				;compare r2 to 'Z'
+		BEQ ENEMY2_SPACE_CHECK_MINUS	;If not, branch to changing ' ' to '#'
+DIRT2_CHANGE_PLUS		 	
+		MOV r2, #0x20				;move space into r2 
+		STRB r2, [r1]				;store space 1 postion away from enemy location   =
+ENEMY2_SPACE_CHECK_MINUS
+		LDR r0, =enemy2_location
+		LDR r1, [r0] 
+		SUB r1, r1, #1				;check postion of enemy one postion behind 
+		LDRB r2, [r1]				;load the content of that address 
+		CMP r2, #0x5A				;compare r2 to 'Z'
+		BEQ ENEMYB_SPAWN			;If not, branch to changing ' ' to '#'
+DIRT2_CHANGE_MINUS		 	
+		MOV r2, #0x20				;move space into r2 
+		STRB r2, [r1]				;store space 1 postion away from enemy location 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;enemy B;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ENEMYB_SPAWN
+ 		LDR r0, =random_number
+ 		ADD r0, r0, #3				;change memory address to increased
+		LDRB r1, [r0] 				;load the bit at memory address
+		MOV r0, r1 					;move r1 into r0, set up divisor
+		MOV r1, #15 				;set up divident
+		BL div_and_mod 				;branch to divison routine
+		MOV r3, r0					;Save quotient to temp register
+		MOV r2, r1 					;move r1 into r2
+		LSL r1, #4 					;multiplication	(r1 x 16)
+		MOV r0, r2 					;multiplication
+		LSL r0, #3 					;multiplication  (r0 x 8)
+		SUB r0, r0, r2				;sub r0 from (r0 x 8) set up for rn*23
+		ADD r4, r0, r1			    ;Hold 23 x (rn/15) in r4
+
+		MOV r0, r3 					;move random number to r0
+		MOV r1, #19 				;move 19 into r1 for divsion
+		BL div_and_mod
+		ADD r1, r1, r4 				;add (rn/19) + (23(rn15))
+		LDR r2, =gameboard 			;Load game baord base address
+		ADD r2, r2, #24				;Ensure no enemy spawns on the first row
+		ADD r1, r1, r2
+		LDR r2, =enemyB_location 	;load enemy base locations
+		STR r1, [r2] 				;store enemy x_1 location
+		MOV r2, #0x78
+		STRB r2, [r1]
+ENEMYB_SPACE_CHECK_PLUS
+		LDR r0, =enemyB_location	;load address of enemy
+		LDR r1, [r0]
+		ADD r1, r1, #1				;check enemy address one location away 
+		LDRB r2, [r1]
+		CMP r2, #0x5A				;compare r2 to 'Z'
+		BEQ ENEMYB_SPACE_CHECK_MINUS	;If not, branch to changing ' ' to '#'
+DIRTB_CHANGE_PLUS		 	
+		MOV r2, #0x20				;move space into r2 
+		STRB r2, [r1]				;store space 1 postion away from enemy location   =
+ENEMYB_SPACE_CHECK_MINUS
+		LDR r0, =enemyB_location
+		LDR r1, [r0] 
+		SUB r1, r1, #1				;check postion of enemy one postion behind 
+		LDRB r2, [r1]				;load the content of that address 
+		CMP r2, #0x5A				;compare r2 to 'Z'
+		BEQ INFINITE_LOOP			;If not, branch to changing ' ' to '#'
+DIRTB_CHANGE_MINUS		 	
+		MOV r2, #0x20				;move space into r2 
+		STRB r2, [r1]				;store space 1 postion away from enemy location 
+
+
 INFINITE_LOOP
 		B INFINITE_LOOP
 
@@ -402,7 +501,7 @@ LARGE_RIGHT_CHECK
 		LDR r1, [r0]
 		SUB r1, r1, #1				;Load the previous number of lives, decrease by 1, branch to check
 		STR r1, [r0]
-
+		
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; CHECK NUMBER OF LIVES ;;;
 LIFE_CHECK	
@@ -569,7 +668,7 @@ TIMER1				; Check for Timer1 interrupt
 		BEQ EINT1
 		
 		STMFD sp!, {r0-r12, lr}	; Save registers
-
+		B FINISH_TIMER1_UPDATE
 		; Timer1 Handling Code (i.e. update the 2-min game timer)
 	; Decrement background timer
 		LDR r0, =game_timer_count
@@ -829,7 +928,7 @@ GAME_START_CHECK
 		LDR r0, =game_start_flag	;Change the game_start flag to 0, allowing timer interrupts to begin, starting the game
 		MOV r1, #0				;Use temporary register, storing the new game_start_flag
 		STR r1, [r0]			;Store the new game_start_flag, allowing the game to start
-		LDR r0, =0xE0004008 	;Load the address for timer0 into r0
+		LDR r0, =0xE0008008 	;Load the address for timer0 into r0
 		LDR r1, =random_number	;Load the address for the random number 
 		LDR r2, [r0]			;Load the current random value from the timer
 		STR r2, [r1]			;Store that timer value to the random number (ensuring it's random based on the user)
@@ -852,6 +951,10 @@ AIR_HOSE_CHECK
 		; If 'x' (small enemy) or 'B' (big enemy), remove the enemy (check if enemy address matches the current temporary address)
 		;															(If so, remove character from board, decrese the total number of enemies)
 		;															(Remove the air hose by working backwards until the player character is found)
+		LDR r0, =0xE0008008 	;Load the address for timer0 into r0
+		LDR r1, =random_number	;Load the address for the random number 
+		LDR r2, [r0]			;Load the current random value from the timer
+		STR r2, [r1]
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; Check for right airhose ;;
 BULLET_RIGHT_CHECK 	

@@ -260,6 +260,8 @@ move_enemy
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_right
+		CMP r3, #0x5A
+		BEQ ENEMY1_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
 		MOV r3, #0x78
@@ -270,6 +272,8 @@ ENEMY1_RIGHT
 		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY1_CHANGE_DIRECT_left
+		CMP r3, #0x5A
 		BEQ ENEMY1_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -304,6 +308,8 @@ SMALL_ENEMY_TWO
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_right
+		CMP r3, #0x5A
+		BEQ ENEMY2_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
 		MOV r3, #0x78
@@ -314,6 +320,8 @@ ENEMY2_RIGHT
 		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMY2_CHANGE_DIRECT_left
+		CMP r3, #0x5A
 		BEQ ENEMY2_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -348,6 +356,8 @@ LARGE_ENEMY_MOVEMENT
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_right
+		CMP r3, #0x5A
+		BEQ ENEMYB_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
 		MOV r3, #0x42
@@ -358,6 +368,8 @@ ENEMYB_RIGHT
 		ADD r2, r1, #1			;Find address of location 1 x-coordinate to right
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
+		BEQ ENEMYB_CHANGE_DIRECT_left
+		CMP r3, #0x5A
 		BEQ ENEMYB_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
