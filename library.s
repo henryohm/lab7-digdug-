@@ -84,7 +84,7 @@ interrupt_init
 		STR r1, [r0]		; Store the new contents back to MR1 ;;; MR1 = 0x008CA000 = 9.216 million tics, to reset twice per second
 	; Timer 1
 		LDR r0, =0xE000801C	; Load address of Match Register 1 (MR1)
-		LDR r1, =0x01195000	; Begin to load contents to trigger interrupt once per second
+		LDR r1, =0x01195000	; Begin to load contents to trigger interrupt ~once per second
 		STR r1, [r0]		; Store the new contents back to MR1
 
 		; UART0 Interrupt Enable
@@ -111,7 +111,7 @@ interrupt_init
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;UPDATING SCORE;;;
 update_score
-		STMFD sp!, {r0-r12, lr}	; Store registers on stack
+		STMFD sp!, {r0, r1, lr}	; Store registers on stack
 	
 	;;; UPDATE SCORE FOR DIRT ;;;
 		CMP r0, #0				 ; If particular register value is 0 when entering routine,
@@ -237,13 +237,13 @@ THOUSANDS_INCREMENT
 
 FINISHSCORE
 		
-	LDMFD sp!, {r0-r12, lr} ; Load registers from stack
+	LDMFD sp!, {r0, r1, lr} ; Load registers from stack
 	BX lr
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;ENEMY MOVEMENT LOGIC;;;
 move_enemy
-		STMFD sp!, {r0-r12, lr}
+		STMFD sp!, {r0-r3, lr}
 	
 ;;; MOVEMENT LOGIC FOR SMALL ENEMY 1 ;;;
 		CMP r0, #0				;Compare to flag value, if 0, grab enemy 1 location and move them
@@ -260,7 +260,7 @@ move_enemy
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_right
-		CMP r3, #0x5A
+		CMP r3, #0x5A			;Compare to 'Z'(wall), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -273,7 +273,7 @@ ENEMY1_RIGHT
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_left
-		CMP r3, #0x5A
+		CMP r3, #0x5A			;Compare to 'Z'(wall), if so, change direction
 		BEQ ENEMY1_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -308,7 +308,7 @@ SMALL_ENEMY_TWO
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_right
-		CMP r3, #0x5A
+		CMP r3, #0x5A			;Compare to 'Z'(wall), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -321,7 +321,7 @@ ENEMY2_RIGHT
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_left
-		CMP r3, #0x5A
+		CMP r3, #0x5A			;Compare to 'Z'(wall), if so, change direction
 		BEQ ENEMY2_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -356,7 +356,7 @@ LARGE_ENEMY_MOVEMENT
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_right
-		CMP r3, #0x5A
+		CMP r3, #0x5A			;Compare to 'Z'(wall), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_right
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -369,7 +369,7 @@ ENEMYB_RIGHT
 		LDRB r3, [r2]			;Load the contents of that address
 		CMP r3, #0x23			;Compare to '#'(dirt), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_left
-		CMP r3, #0x5A
+		CMP r3, #0x5A			;Compare to 'Z'(wall), if so, change direction
 		BEQ ENEMYB_CHANGE_DIRECT_left
 		MOV r3, #0x20			;Store ' ' at the old enemy location
 		STRB r3, [r1]			
@@ -389,7 +389,7 @@ ENEMYB_CHANGE_DIRECT_left
 		B END_ENEMY_MOVEMENT
 
 END_ENEMY_MOVEMENT
-		LDMFD sp!, {r0-r12, lr}
+		LDMFD sp!, {r0-r3, lr}
 		BX lr
 ;;;;;;INITIALIZE THE UART FOR THE USER;;;;;;
 uart_init
@@ -551,10 +551,7 @@ illuminate_LEDs
 	STMFD SP!, {lr}	
 	
 		LDR r1, =0xE0028018		;Load the address of IO1DIR
-		LDR r2, [r1]
-		AND r2, r2, #0			;Making all memory zero
-		ORR r2, r2, #0xF		
-		LSL r2, #20				;Ensure the data for IO1DIR is 0x000F0000
+		MOV r2, #0x000F0000
 		STR r2, [r1]			;Store the data back to IO1DIR
 	
 	LDR r1, =0xE0028014		;Load output register IO1set

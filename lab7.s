@@ -668,7 +668,6 @@ TIMER1				; Check for Timer1 interrupt
 		BEQ EINT1
 		
 		STMFD sp!, {r0-r12, lr}	; Save registers
-		B FINISH_TIMER1_UPDATE
 		; Timer1 Handling Code (i.e. update the 2-min game timer)
 	; Decrement background timer
 		LDR r0, =game_timer_count
@@ -800,6 +799,9 @@ UP_CHANGE_DIRECT
 		MOV r2, #0x5E			;Temporarily store the character '^', representing up movement
 		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
+		LDR r5, =player_location	;Load the address for the player's current location
+		LDR r4, [r5]			;Load the player's location
+		STRB r2, [r4]			;Store the player character at their location, showing they changed direction
 		B FIQ_Exit
 
 ;;;;;;UPDATE TO MOVE LEFT;;;;;;
@@ -840,6 +842,9 @@ LEFT_CHANGE_DIRECT
 		MOV r2, #0x3C			;Temporarily store the character '<', representing left movement
 		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
+		LDR r5, =player_location	;Load the address for the player's current location
+		LDR r4, [r5]			;Load the player's location
+		STRB r2, [r4]			;Store the player character at their location, showing they changed direction
 		B FIQ_Exit
 
 ;;;;;;UPDATE TO MOVE DOWN;;;;;;
@@ -880,6 +885,9 @@ DOWN_CHANGE_DIRECT
 		MOV r2, #0x76			;Temporarily store the character 'v', representing down movement
 		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
+		LDR r5, =player_location	;Load the address for the player's current location
+		LDR r4, [r5]			;Load the player's location
+		STRB r2, [r4]			;Store the player character at their location, showing they changed direction
 		B FIQ_Exit
 
 ;;;;;;UPDATE TO MOVE RIGHT;;;;;;
@@ -920,6 +928,9 @@ RIGHT_CHANGE_DIRECT
 		MOV r2, #0x3E			;Temporarily store the character '>', representing right movement
 		LDR r5, =player_character	;Load the address for the player's current character
 		STRB r2, [r5]			;Store the new character representing the player
+		LDR r5, =player_location	;Load the address for the player's current location
+		LDR r4, [r5]			;Load the player's location
+		STRB r2, [r4]			;Store the player character at their location, showing they changed direction
 		B FIQ_Exit
 
 GAME_START_CHECK
@@ -955,6 +966,9 @@ AIR_HOSE_CHECK
 		LDR r1, =random_number	;Load the address for the random number 
 		LDR r2, [r0]			;Load the current random value from the timer
 		STR r2, [r1]
+
+		LDR r1, =player_character
+		LDRB r2, [r1]
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; Check for right airhose ;;
 BULLET_RIGHT_CHECK 	
@@ -963,11 +977,11 @@ BULLET_RIGHT_CHECK
 		LDR r0, =player_location		;Load the address of the player's current location 
 		LDR r1, [r0]					;Load the player's current location
 		ADD r1, r1, #1					;Find location +1 x-coordinate away from the player (right)
-		LDR r2, [r1]					;Load the content of that new address
+		LDRB r2, [r1]					;Load the content of that new address
 		B SPACE_CHECK_RIGHT			
 SPACE_LOOP_RIGHT 
 		ADD r1, r1, #1					;check next address one position away
-		LDRB r2, [r0]
+		LDRB r2, [r1]
 SPACE_CHECK_RIGHT
 		CMP r2, #0x20					;Compare content of new location +1 to "space"
 		BNE DIRT_CHECK_RIGHT 			;If not, branch to next check
@@ -985,14 +999,15 @@ BIG_CHECK_RIGHT
 		LDR r4, [r3]					;Load the large enemy's current location
 		CMP r1, r4						;Compare new address to address of large enemy
 		BNE SMALL_ONE_CHECK_RIGHT 		;If not, branch to next check
+		MOV r2, #0x20
+		STRB r2, [r4]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		MOV r4, #0
 		STR r4, [r3]					;Store 0 to the old large enemy's location, signally that it was destroyed
-		MOV r2, #0x20
-		STRB r2, [r1]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		LDR r3, =enemy_count
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]						;Store that value back to enemy_count
+	;; Increment score for large
 		B BULLET_DELETE_RIGHT
 SMALL_ONE_CHECK_RIGHT
 		LDR r3, =enemy1_location		;Load the address of the small enemy 1's current location
@@ -1007,6 +1022,7 @@ SMALL_ONE_CHECK_RIGHT
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]						;Store that value back to enemy_count
+	;; Increment score for small
 		B BULLET_DELETE_RIGHT
 SMALL_TWO_CHECK_RIGHT
 		LDR r3, =enemy2_location		;Load the address of the small enemy 2's current location
@@ -1018,17 +1034,19 @@ SMALL_TWO_CHECK_RIGHT
 		LDR r3, =enemy_count
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
-		STR r4, [r3]						;Store that value back to enemy_count]
+		STR r4, [r3]						;Store that value back to enemy_count
+	;; Increment score for small
 BULLET_DELETE_RIGHT
-		LDR r2, [r1]					;Load contents from temp location
+		LDRB r2, [r1]					;Load contents from temp location
 		CMP r2, #0x3D      				;Compare r1 to '='	
 		BNE BULLET_DELETE_RIGHT_CHECK
 		MOV	r2, #0x20					;Move space into r2
-		STR r2, [r1]					;store space into r2			
+		STRB r2, [r1]					;store space into r2			
 BULLET_DELETE_RIGHT_CHECK
 		SUB r1, r1, #1					;subtract 1 from temp location to check previous location
 		LDR r2, =player_location
-		CMP r2, r1
+		LDR r3, [r2]
+		CMP r3, r1
 		BNE BULLET_DELETE_RIGHT 	
 		B FIQ_Exit
 		
@@ -1039,11 +1057,11 @@ BULLET_LEFT_CHECK
 		LDR r0, =player_location		;Load the address of the player's current location 
 		LDR r1, [r0]					;Load the player's current location
 		SUB r1, r1, #1					;Find location -1 x-coordinate away from the player (left)
-		LDR r2, [r1]					;Load the content of that new address
+		LDRB r2, [r1]					;Load the content of that new address
 		B SPACE_CHECK_LEFT			
 SPACE_LOOP_LEFT 
-		ADD r1, r1, #1					;check next address one position away
-		LDRB r2, [r0]
+		SUB r1, r1, #1					;check next address one position away
+		LDRB r2, [r1]
 SPACE_CHECK_LEFT
 		CMP r2, #0x20					;Compare content of new location +1 to "space"
 		BNE DIRT_CHECK_LEFT 			;If not, branch to next check
@@ -1061,14 +1079,15 @@ BIG_CHECK_LEFT
 		LDR r4, [r3]					;Load the large enemy's current location
 		CMP r1, r4						;Compare new address to address of large enemy
 		BNE SMALL_ONE_CHECK_LEFT 		;If not, branch to next check
+		MOV r2, #0x20
+		STRB r2, [r4]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		MOV r4, #0
 		STR r4, [r3]					;Store 0 to the old large enemy's location, signally that it was destroyed
-		MOV r2, #0x20
-		STRB r2, [r1]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		LDR r3, =enemy_count
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]						;Store that value back to enemy_count
+	;; Increment score for large
 		B BULLET_DELETE_LEFT
 SMALL_ONE_CHECK_LEFT
 		LDR r3, =enemy1_location		;Load the address of the small enemy 1's current location
@@ -1083,6 +1102,7 @@ SMALL_ONE_CHECK_LEFT
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for small
 		B BULLET_DELETE_LEFT
 SMALL_TWO_CHECK_LEFT
 		LDR r3, =enemy2_location		;Load the address of the small enemy 2's current location
@@ -1095,16 +1115,18 @@ SMALL_TWO_CHECK_LEFT
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for small
 BULLET_DELETE_LEFT
-		LDR r2, [r1]					;Load contents from temp location
+		LDRB r2, [r1]					;Load contents from temp location
 		CMP r2, #0x3D      				;Compare r2 to '='	
 		BNE BULLET_DELETE_LEFT_CHECK
 		MOV	r2, #0x20					;Move space into r2
-		STR r2, [r1]					;store space into r2			
+		STRB r2, [r1]					;store space into r2			
 BULLET_DELETE_LEFT_CHECK
 		ADD r1, r1, #1					;add 1 to temp location to check previous location
 		LDR r2, =player_location
-		CMP r2, r1
+		LDR r3, [r2]
+		CMP r3, r1
 		BNE BULLET_DELETE_LEFT 	
 		B FIQ_Exit
 
@@ -1115,11 +1137,11 @@ BULLET_UP_CHECK
 		LDR r0, =player_location		;Load the address of the player's current location 
 		LDR r1, [r0]					;Load the player's current location
 		SUB r1, r1, #23					;Find location 1 y-coordinate away from the player (up)
-		LDR r2, [r1]					;Load the content of that new address
+		LDRB r2, [r1]					;Load the content of that new address
 		B SPACE_CHECK_UP			
 SPACE_LOOP_UP 
 		SUB r1, r1, #23					;check next address one position away
-		LDRB r2, [r0]
+		LDRB r2, [r1]
 SPACE_CHECK_UP
 		CMP r2, #0x20					;Compare content of new location -23 to "space"
 		BNE DIRT_CHECK_UP	 			;If not, branch to next check
@@ -1137,14 +1159,15 @@ BIG_CHECK_UP
 		LDR r4, [r3]					;Load the large enemy's current location
 		CMP r1, r4						;Compare new address to address of large enemy
 		BNE SMALL_ONE_CHECK_UP	 		;If not, branch to next check
+		MOV r2, #0x20
+		STRB r2, [r4]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		MOV r4, #0
 		STR r4, [r3]					;Store 0 to the old large enemy's location, signally that it was destroyed
-		MOV r2, #0x20
-		STRB r2, [r1]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		LDR r3, =enemy_count
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for large
 		B BULLET_DELETE_UP
 SMALL_ONE_CHECK_UP
 		LDR r3, =enemy1_location		;Load the address of the small enemy 1's current location
@@ -1159,6 +1182,7 @@ SMALL_ONE_CHECK_UP
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for small
 		B BULLET_DELETE_UP
 SMALL_TWO_CHECK_UP
 		LDR r3, =enemy2_location		;Load the address of the small enemy 2's current location
@@ -1171,16 +1195,18 @@ SMALL_TWO_CHECK_UP
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for small
 BULLET_DELETE_UP
-		LDR r2, [r1]					;Load contents from temp location
+		LDRB r2, [r1]					;Load contents from temp location
 		CMP r2, #0x3D      				;Compare r2 to '='	
 		BNE BULLET_DELETE_UP_CHECK
 		MOV	r2, #0x20					;Move space into r2
-		STR r2, [r1]					;store space into r2			
+		STRB r2, [r1]					;store space into r2			
 BULLET_DELETE_UP_CHECK
 		SUB r1, r1, #23					;Subtract 23 from temp location to check previous location
 		LDR r2, =player_location
-		CMP r2, r1
+		LDR r3, [r2]
+		CMP r3, r1
 		BNE BULLET_DELETE_UP 	
 		B FIQ_Exit
 		
@@ -1191,11 +1217,11 @@ BULLET_DOWN_CHECK
 		LDR r0, =player_location		;Load the address of the player's current location 
 		LDR r1, [r0]					;Load the player's current location
 		ADD r1, r1, #23					;Find location -1 y-coordinate away from the player (down)
-		LDR r2, [r1]					;Load the content of that new address
+		LDRB r2, [r1]					;Load the content of that new address
 		B SPACE_CHECK_DOWN			
 SPACE_LOOP_DOWN
 		ADD r1, r1, #23					;check next address 23 positions away
-		LDRB r2, [r0]
+		LDRB r2, [r1]
 SPACE_CHECK_DOWN
 		CMP r2, #0x20					;Compare content of new location +23 to "space"
 		BNE DIRT_CHECK_DOWN	 			;If not, branch to next check
@@ -1213,14 +1239,15 @@ BIG_CHECK_DOWN
 		LDR r4, [r3]					;Load the large enemy's current location
 		CMP r1, r4						;Compare new address to address of large enemy
 		BNE SMALL_ONE_CHECK_DOWN	 	;If not, branch to next check
+		MOV r2, #0x20
+		STRB r2, [r4]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		MOV r4, #0
 		STR r4, [r3]					;Store 0 to the old large enemy's location, signally that it was destroyed
-		MOV r2, #0x20
-		STRB r2, [r1]					;Move ' ' character to the old enemy location (removing the old character from the board)
 		LDR r3, =enemy_count
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for large
 		B BULLET_DELETE_DOWN
 SMALL_ONE_CHECK_DOWN
 		LDR r3, =enemy1_location		;Load the address of the small enemy 1's current location
@@ -1235,6 +1262,7 @@ SMALL_ONE_CHECK_DOWN
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for small
 		B BULLET_DELETE_DOWN
 SMALL_TWO_CHECK_DOWN
 		LDR r3, =enemy2_location		;Load the address of the small enemy 2's current location
@@ -1247,16 +1275,18 @@ SMALL_TWO_CHECK_DOWN
 		LDR r4, [r3]					;Load the current number of enemies
 		SUB r4, r4, #1					;Decrement the current number of enemies by 1
 		STR r4, [r3]					;Store that value back to enemy_count
+	;; Increment score for small
 BULLET_DELETE_DOWN
-		LDR r2, [r1]					;Load contents from temp location
+		LDRB r2, [r1]					;Load contents from temp location
 		CMP r2, #0x3D      				;Compare r2 to '='	
 		BNE BULLET_DELETE_DOWN_CHECK
 		MOV	r2, #0x20					;Move space into r2
-		STR r2, [r1]					;store space into r2			
+		STRB r2, [r1]					;store space into r2			
 BULLET_DELETE_DOWN_CHECK
 		ADD r1, r1, #23					;add 1 to temp location to check previous location
 		LDR r2, =player_location
-		CMP r2, r1
+		LDR r3, [r2]
+		CMP r3, r1
 		BNE BULLET_DELETE_UP 	
 		B FIQ_Exit
 
